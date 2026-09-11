@@ -1,6 +1,7 @@
 import { execFile, spawn, type ChildProcess } from 'child_process'
 import crossSpawn from 'cross-spawn'
 import { existsSync } from 'fs'
+import { readlink } from 'fs/promises'
 import { basename, delimiter, extname, join, sep } from 'path'
 import { promisify } from 'util'
 import { cacheDir, pythonsDir } from './paths'
@@ -339,6 +340,12 @@ export async function processImage(pid: number): Promise<string | undefined> {
       })
       const row = stdout.match(/^"([^"]+)","(\d+)"/m)
       return row && Number(row[2]) === pid ? row[1].toLowerCase() : undefined
+    }
+    if (process.platform === 'linux') {
+      // `ps -o comm` gives the name of the main thread, which Node renames "MainThread": the
+      // executable itself is the link /proc keeps.
+      const exe = await readlink(`/proc/${Math.trunc(pid)}/exe`)
+      return basename(exe.replace(/ \(deleted\)$/, '')).toLowerCase() || undefined
     }
     const { stdout } = await execFileAsync('ps', ['-p', String(pid), '-o', 'comm='])
     return basename(stdout.trim()).toLowerCase() || undefined
