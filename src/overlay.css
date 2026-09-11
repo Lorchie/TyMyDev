@@ -1,0 +1,318 @@
+:root {
+  --panel: #1a1c25;
+  --panel-2: #21242f;
+  --line: #2c3040;
+  --text: #e7e9f0;
+  --muted: #9aa0b4;
+  --accent: #6c8cff;
+  --danger: #ff6b6b;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  color: var(--text);
+  font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  user-select: none;
+}
+
+/* Everything is anchored to the corner the view grows from: bottom-right unless told otherwise. */
+#toggle,
+.card {
+  position: fixed;
+  right: 6px;
+  bottom: 6px;
+}
+
+body.left #toggle,
+body.left .card {
+  right: auto;
+  left: 6px;
+}
+
+body.top #toggle,
+body.top .card {
+  bottom: auto;
+  top: 6px;
+}
+
+#toggle {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  opacity: 0.85;
+  touch-action: none;
+}
+
+#toggle:hover,
+#toggle:focus-visible {
+  opacity: 1;
+  border-color: var(--accent);
+  outline: none;
+}
+
+body.dragging #toggle {
+  right: auto;
+  bottom: auto;
+  cursor: grabbing;
+  opacity: 1;
+  border-color: var(--accent);
+}
+
+.card {
+  display: none;
+  width: 260px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+}
+
+body[data-view='menu'] #menu,
+body[data-view='report'] #report,
+body[data-view='saved'] #saved {
+  display: block;
+}
+
+body[data-view='menu'] #toggle,
+body[data-view='report'] #toggle,
+body[data-view='saved'] #toggle {
+  display: none;
+}
+
+#report {
+  width: 440px;
+}
+
+body[data-view='report'] #report {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 12px);
+}
+
+#saved {
+  width: 300px;
+}
+
+header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 10px 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.product {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.label {
+  margin-top: 2px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.close {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.close:hover,
+.close:focus-visible {
+  background: var(--panel-2);
+  color: var(--text);
+  outline: none;
+}
+
+#tools {
+  padding: 6px;
+}
+
+.tool {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tool:hover:not(:disabled),
+.tool:focus-visible {
+  background: var(--panel-2);
+  outline: none;
+}
+
+.tool:disabled {
+  cursor: default;
+  color: var(--muted);
+}
+
+.tool small {
+  display: block;
+  color: var(--muted);
+}
+
+.body {
+  padding: 10px 12px;
+  overflow: auto;
+  min-height: 0;
+  user-select: text;
+}
+
+.body p {
+  margin: 0 0 8px;
+}
+
+.field {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.field span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+}
+
+textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+}
+
+textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+#screenshot-preview {
+  display: block;
+  max-width: 100%;
+  max-height: 140px;
+  margin-bottom: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+body.no-screenshot #screenshot-preview {
+  opacity: 0.25;
+}
+
+details {
+  margin-bottom: 8px;
+}
+
+summary {
+  cursor: pointer;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+pre {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #13141b;
+  font: 11px/1.45 ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.error {
+  color: var(--danger);
+}
+
+footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--line);
+}
+
+footer button {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.primary {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #0c0d12;
+  font-weight: 600;
+}
+
+.primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.secondary {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+}
+
+footer button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:"
+    />
+    <title>TryMyDev overlay</title>
+  </head>
+  <body>
+    <button id="toggle" type="button" title="TryMyDev tools — drag to move" aria-label="TryMyDev tools" aria-expanded="false">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        <path
+          d="M14.7 6.3a4 4 0 0 0-5.4 5.1l-5 5a1.8 1.8 0 1 0 2.5 2.5l5-5a4 4 0 0 0 5.1-5.4l-2.4 2.4-2.2-.6-.6-2.2z"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linejoin="round"
+        />
+      </svg>
+    </button>
+
+    <section id="menu" class="card" aria-label="TryMyDev tools">
+      <header>
+        <div>
+          <div class="product">TryMyDev</div>
+          <div class="label" data-label></div>
+        </div>
+        <button class="close" type="button" title="Close" aria-label="Close" data-close>×</button>
+      </header>
+      <div id="tools"></div>
+    </section>
+
+    <section id="report" class="card" aria-label="Report a bug">
+      <header>
+        <div>
+          <div class="product">Report a bug</div>
+          <div class="label" data-label></div>
+        </div>
+        <button class="close" type="button" title="Cancel" aria-label="Cancel" data-close>×</button>
+      </header>
+      <div class="body">
+        <label class="field">
+          <span>What happened? What did you expect?</span>
+          <textarea id="description" rows="4" placeholder="I clicked Generate and nothing happened…"></textarea>
+        </label>
+        <label class="check" id="screenshot-row">
+          <input id="screenshot" type="checkbox" checked />
+          <span>Include a screenshot</span>
+        </label>
+        <img id="screenshot-preview" alt="Screenshot of the application" />
+        <details open>
+          <summary>report.md</summary>
+          <pre id="markdown"></pre>
+        </details>
+        <details id="logs-block">
+          <summary>logs.txt</summary>
+          <pre id="logs"></pre>
+        </details>
+        <p class="note">
+          This is everything the report holds. Typed text is never recorded and secrets are masked, but masking cannot
+          catch everything: check before you send it.
+        </p>
+        <p class="error" id="report-error" hidden></p>
+      </div>
+      <footer>
+        <button type="button" class="secondary" data-close>Cancel</button>
+        <button type="button" class="primary" id="save">Save report…</button>
+      </footer>
+    </section>
+
+    <section id="saved" class="card" aria-label="Report saved">
+      <header>
+        <div>
+          <div class="product">Report saved</div>
+          <div class="label" id="saved-name"></div>
+        </div>
+        <button class="close" type="button" title="Close" aria-label="Close" data-close>×</button>
+      </header>
+      <div class="body">
+        <p>Send this file to the developer.</p>
+      </div>
+      <footer>
+        <button type="button" class="secondary" id="show">Show in folder</button>
+        <button type="button" class="primary" data-close>Done</button>
+      </footer>
+    </section>
+
+    <script type="module" src="./overlay.ts"></script>
+  </body>
+</html>

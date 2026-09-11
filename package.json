@@ -1,0 +1,85 @@
+{
+  "name": "trymydev",
+  "version": "0.1.0",
+  "description": "Run any GitHub branch, fork or pull request of any project — hand it to your testers",
+  "main": "./out/main/index.js",
+  "author": "TryMyDev",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "test": "node --test --experimental-transform-types --disable-warning=ExperimentalWarning --import ./test/register.mjs \"electron/**/*.test.ts\"",
+    "test:e2e": "electron-vite build && node --test test/e2e.test.mjs test/overlay.e2e.test.mjs",
+    "icons": "electron build/icons.cjs",
+    "package": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && electron-builder",
+    "package:mac": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && electron-builder --mac --arm64",
+    "package:linux": "npm run build && electron-builder --linux"
+  },
+  "dependencies": {
+    "cross-spawn": "^7.0.6",
+    "tar": "^7.5.9"
+  },
+  "devDependencies": {
+    "@types/cross-spawn": "^6.0.6",
+    "@types/node": "^22.10.1",
+    "@types/react": "^18.3.17",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "cross-env": "^10.1.0",
+    "electron": "^42.4.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "npm": "^11.19.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.7.2",
+    "vite": "^7.0.0"
+  },
+  "build": {
+    "appId": "com.trymydev.app",
+    "productName": "TryMyDev",
+    "asar": true,
+    "afterPack": "./build/after-pack.cjs",
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableCookieEncryption": true,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "node_modules/**/*",
+      "package.json",
+      "resources/icon.ico",
+      "resources/icon.png"
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "win": {
+      "target": "nsis",
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "icon": "resources/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "resources/icon.icns",
+      "identity": null,
+      "category": "public.app-category.developer-tools",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "resources/icon.png",
+      "category": "Development"
+    }
+  }
+}
