@@ -64,8 +64,10 @@ const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/
 function homePattern(home: string): RegExp | undefined {
   const trimmed = home.replace(/[\\/]+$/, '')
   if (trimmed.length < 3) return undefined
-  const parts = trimmed.split(/[\\/]+/).map(escapeRegExp)
-  return new RegExp(parts.join('[\\\\/]+'), process.platform === 'win32' ? 'gi' : 'g')
+  const parts = trimmed.split(/[\\/]+/).filter(Boolean).map(escapeRegExp)
+  // A home starting with a slash takes that one slash: `file:///home/me` keeps the others.
+  const lead = /^[\\/]/.test(trimmed) ? '[\\\\/]' : ''
+  return new RegExp(lead + parts.join('[\\\\/]+'), process.platform === 'win32' ? 'gi' : 'g')
 }
 
 export function redactText(text: string, context: RedactContext = {}): string {
@@ -99,6 +101,11 @@ export function redactUrl(url: string, context: RedactContext = {}): string {
   }
   const hash = parsed.hash && !/[=&]/.test(parsed.hash) && parsed.hash.length <= 80 ? parsed.hash : parsed.hash ? '#…' : ''
   const query = parsed.search ? '?…' : ''
-  const host = parsed.protocol === 'file:' ? '' : parsed.host
-  return redactText(`${parsed.protocol}//${host}${decoded(parsed.pathname)}${query}${hash}`, context)
+  if (parsed.protocol === 'file:') {
+    // The path is masked on its own, then the address rebuilt: `/home/me/app` becomes `~/app`,
+    // and `file:///~/app` on every system.
+    const path = redactText(decoded(parsed.pathname), context)
+    return redactText(`file://${path.startsWith('/') ? '' : '/'}${path}${query}${hash}`, context)
+  }
+  return redactText(`${parsed.protocol}//${parsed.host}${decoded(parsed.pathname)}${query}${hash}`, context)
 }

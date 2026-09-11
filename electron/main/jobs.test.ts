@@ -7,8 +7,9 @@ import { writeJson } from './fsx'
 import { reattach } from './jobs'
 import { registryPath } from './paths'
 import { patchState, readState } from './provision'
+import { killTree, processImage, processStartTime } from './proc'
 import { isRunning, stop } from './runner'
-import { cleanup, until, useUserData } from './testing'
+import { cleanup, isAlive, until, useUserData } from './testing'
 
 let data: string
 
@@ -29,11 +30,16 @@ before(() => {
 after(() => cleanup(data))
 
 describe('reattach', () => {
-  it('takes back what still runs, and forgets PIDs that are gone or now belong to another program', async () => {
+  it('takes back what still runs, and forgets PIDs that are gone or now belong to another program', async (t) => {
     const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
       detached: true,
       stdio: 'ignore',
       windowsHide: true
+    })
+    // A failing assertion must not leave it running: the test run would never end.
+    child.unref()
+    t.after(() => {
+      if (child.pid && isAlive(child.pid)) killTree(child.pid)
     })
     await until(() => child.pid !== undefined)
     const image = basename(process.execPath).toLowerCase()
@@ -54,7 +60,15 @@ describe('reattach', () => {
     }
     await reattach(() => win as never)
 
-    assert.equal(isRunning('alive-00000000'), true)
+    // What the system says, for a failure on a platform the tests rarely run on.
+    const seen = JSON.stringify({
+      image: await processImage(child.pid!),
+      expected: image,
+      startedAt: await processStartTime(child.pid!),
+      now: Date.now(),
+      bootedAt: Date.now() - uptime() * 1000
+    })
+    assert.equal(isRunning('alive-00000000'), true, seen)
     assert.equal(isRunning('stale-00000000'), false)
     assert.equal(readState('app', 'stale-00000000').running, undefined)
     assert.equal(isRunning('reused-00000000'), false)

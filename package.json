@@ -10,7 +10,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
-    "test": "node --test --experimental-transform-types --disable-warning=ExperimentalWarning --import ./test/register.mjs \"electron/**/*.test.ts\"",
+    "test": "node --test --test-timeout=120000 --experimental-transform-types --disable-warning=ExperimentalWarning --import ./test/register.mjs \"electron/**/*.test.ts\"",
     "test:e2e": "electron-vite build && node --test test/e2e.test.mjs test/overlay.e2e.test.mjs",
     "icons": "electron build/icons.cjs",
     "package": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && electron-builder",

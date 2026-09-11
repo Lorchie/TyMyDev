@@ -95,6 +95,12 @@ describe('redactUrl', () => {
     assert.equal(redactUrl(file, { home }), 'file:///~/app/out/index.html#/generate')
   })
 
+  it('masks a home starting with a slash without swallowing the slashes before it', () => {
+    const posix = { home: '/home/jerome' }
+    assert.equal(redactText('at /home/jerome/app/main.js', posix), 'at ~/app/main.js')
+    assert.equal(redactUrl('file:///home/jerome/app/index.html#/models', posix), 'file:///~/app/index.html#/models')
+  })
+
   it('falls back to masking text that is no URL', () => {
     assert.equal(redactUrl('not a url token=abc'), 'not a url token=[redacted]')
   })

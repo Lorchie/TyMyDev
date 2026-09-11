@@ -1,5 +1,16 @@
 import assert from 'node:assert/strict'
-import { chmodSync, closeSync, copyFileSync, existsSync, linkSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  closeSync,
+  copyFileSync,
+  existsSync,
+  linkSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync
+} from 'node:fs'
 import { userInfo } from 'node:os'
 import { basename, delimiter, dirname, join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
@@ -247,7 +258,8 @@ setInterval(() => {}, 1000)`
   after(() => cleanup(work, data))
 
   it('maps node onto the runtime of the toolchain, not the one on PATH', async () => {
-    assert.equal((await capture('node -p process.execPath', ctx)).trim(), fakeNode)
+    // Resolved on both sides: macOS reaches its temporary folder through /private.
+    assert.equal(realpathSync((await capture('node -p process.execPath', ctx)).trim()), realpathSync(fakeNode))
   })
 
   it('runs npm through the npm shipped with TryMyDev', async () => {
