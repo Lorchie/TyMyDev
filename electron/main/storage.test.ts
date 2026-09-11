@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
 import { writeJson } from './fsx'
@@ -20,7 +20,7 @@ import {
   storeDir,
   venvStore
 } from './paths'
-import { prune, usage } from './storage'
+import { CACHE_IDLE_MS, ensureFreeSpace, prune, setIdleCachesAside, usage } from './storage'
 import { cleanup, useUserData } from './testing'
 
 const kind = process.platform === 'win32' ? 'junction' : 'dir'
@@ -150,5 +150,47 @@ describe('prune', () => {
   it('removes the download caches when asked', async () => {
     assert.ok((await prune({ caches: true })) >= 5_000)
     assert.equal(existsSync(cacheDir('uv')), false)
+  })
+
+  it('keeps every environment while the state of a branch cannot be read', async () => {
+    put(join(venvStore('orphan-venv'), 'pyvenv.cfg'))
+    writeFileSync(statePath('app', MAIN), '{ torn')
+    const entry = (await usage()).find((e) => e.label.startsWith('Python environments · orphan-v'))
+    assert.equal(entry?.orphan, false, 'not offered for removal either')
+    await prune()
+    assert.ok(existsSync(venvStore('orphan-venv')))
+
+    writeJson(statePath('app', MAIN), { nodeKey: 'kept-node', pythonKey: 'kept-venv' })
+    await prune()
+    assert.equal(existsSync(venvStore('orphan-venv')), false)
+    assert.ok(existsSync(venvStore('kept-venv')))
+  })
+})
+
+describe('setIdleCachesAside', () => {
+  it('sets aside the caches nothing was added to for two weeks, and the next prune empties them', async () => {
+    put(join(cacheDir('pip'), 'http', 'old.whl'), 3_000)
+    put(join(cacheDir('npm'), '_cacache', 'fresh.tgz'))
+    const old = new Date(Date.now() - CACHE_IDLE_MS - 60_000)
+    for (const path of [join(cacheDir('pip'), 'http'), cacheDir('pip')]) utimesSync(path, old, old)
+
+    assert.deepEqual(await setIdleCachesAside(), ['pip'])
+    assert.equal(existsSync(cacheDir('pip')), false)
+    assert.ok(existsSync(join(cacheDir('npm'), '_cacache', 'fresh.tgz')), 'a cache in use stays')
+    assert.equal((await usage()).find((e) => e.label === 'Being cleaned up')?.orphan, true)
+
+    assert.ok((await prune()) >= 3_000)
+    assert.deepEqual(readdirSync(join(storeDir(), 'trash')), [])
+  })
+})
+
+describe('ensureFreeSpace', () => {
+  it('stops before an install the disk has no room for', async () => {
+    await assert.rejects(ensureFreeSpace(data, Number.MAX_SAFE_INTEGER), /Only [\d.]+ GB are free on the disk holding .*Storage shows/)
+    await ensureFreeSpace(data, 1)
+  })
+
+  it('lets a start go on where the free space cannot be known', async () => {
+    await ensureFreeSpace(join(data, 'no', 'such', 'folder'), Number.MAX_SAFE_INTEGER)
   })
 })

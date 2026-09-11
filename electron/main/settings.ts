@@ -5,6 +5,33 @@ import { settingsPath } from './paths'
 interface SettingsFile {
   /** Sealed by the operating system (DPAPI, Keychain, libsecret), base64. */
   githubToken?: string
+  autoCleanup?: boolean
+  overlay?: boolean
+}
+
+/** What a tester can switch off, both on unless they did. */
+export interface Preferences {
+  /** Unused environments, leftovers and idle download caches removed when TryMyDev starts. */
+  autoCleanup: boolean
+  /** The tools overlay on tested applications — off as a way out if it ever troubles one. */
+  overlay: boolean
+}
+
+export const PREFERENCE_NAMES = ['autoCleanup', 'overlay'] as const
+
+export function preferences(): Preferences {
+  const file = readJson<SettingsFile>(settingsPath(), {})
+  return { autoCleanup: file.autoCleanup !== false, overlay: file.overlay !== false }
+}
+
+export function setPreference(name: keyof Preferences, value: boolean): Preferences {
+  if (!PREFERENCE_NAMES.includes(name) || typeof value !== 'boolean') {
+    throw new Error(`Unknown setting: ${String(name)}`)
+  }
+  const file = readJson<SettingsFile>(settingsPath(), {})
+  file[name] = value
+  writeJson(settingsPath(), file)
+  return preferences()
 }
 
 /** Linux without a keyring falls back to a key hardcoded in Chromium, which protects nothing. */

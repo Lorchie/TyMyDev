@@ -17,7 +17,9 @@ before(() => {
     shared: join(root, 'shared'),
     short: join(root, 'short'),
     documents: join(root, 'documents'),
-    venvPython: join(root, 'venvs', 'abc', 'Scripts', 'python.exe')
+    appData: join(root, 'appdata'),
+    venvPython: join(root, 'venvs', 'abc', 'Scripts', 'python.exe'),
+    folders: { extensions: join(root, 'chosen', 'ext') }
   }
   mkdirSync(places.checkout, { recursive: true })
 })
@@ -55,6 +57,25 @@ describe('placeSeeds', () => {
     }
   })
 
+  it('sets the keys of a merged file at every start, keeping what the application wrote beside them', async () => {
+    const seeds = [
+      { path: 'app.json', json: { models: '{documents}/App/models' } },
+      { path: 'app.json', json: { extensions: '{folder:extensions}' }, merge: true }
+    ]
+    await placeSeeds(seeds, places)
+    assert.deepEqual(read('app.json'), { models: join(places.documents, 'App', 'models'), extensions: join(root, 'chosen', 'ext') })
+
+    writeFileSync(join(places.data, 'app.json'), JSON.stringify({ models: 'mine', token: 'kept', extensions: 'old' }))
+    await placeSeeds(seeds, { ...places, folders: { extensions: join(root, 'other') } })
+    assert.deepEqual(read('app.json'), { models: 'mine', token: 'kept', extensions: join(root, 'other') })
+  })
+
+  it('merges into a file the application broke, instead of failing to start', async () => {
+    writeFileSync(join(places.data, 'broken.json'), '{ nope')
+    await placeSeeds([{ path: 'broken.json', json: { home: '{appData}/App' }, merge: true }], places)
+    assert.deepEqual(read('broken.json'), { home: join(places.appData, 'App') })
+  })
+
   it('links a folder to the Python environment of the branch', async () => {
     await placeSeeds([{ path: 'dependencies/venv', link: '{venv}' }], places)
     assert.equal(realpathSync(join(places.data, 'dependencies', 'venv')), realpathSync(join(root, 'venvs', 'abc')))
@@ -68,6 +89,10 @@ describe('placeSeeds', () => {
     await assert.rejects(
       placeSeeds([{ path: 'm.json', json: '{sha256:missing.txt}', always: true }], places),
       /missing\.txt, which the checkout does not have/
+    )
+    await assert.rejects(
+      placeSeeds([{ path: 'x.json', json: '{folder:nowhere}', always: true }], places),
+      /\{folder:nowhere\}, a folder the manifest does not declare/
     )
   })
 })

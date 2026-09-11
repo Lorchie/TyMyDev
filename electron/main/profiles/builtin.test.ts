@@ -59,7 +59,6 @@ describe('built-in profiles', () => {
     assert.equal(modly?.runtime?.python, '3.11')
     assert.equal(modly?.install?.at(-1)?.run, 'pip install pip -r api/requirements.txt')
     assert.equal(settings.dependenciesDir, '{data}/dependencies')
-    assert.equal(settings.extensionsDir, '{short}/ext')
     assert.equal(settings.modelsDir, '{documents}/Modly/models')
     assert.deepEqual(seed.find((s) => s.path === 'dependencies/venv'), { path: 'dependencies/venv', link: '{venv}' })
     assert.deepEqual(seed.find((s) => s.path === 'python_setup.json'), {
@@ -67,5 +66,40 @@ describe('built-in profiles', () => {
       json: { version: 3, requirementsHash: '{sha256:api/requirements.txt}' },
       always: true
     })
+  })
+
+  it("uses the installed Modly's extensions and TryMyDev's workspace and workflows, each switchable", () => {
+    const modly = builtinFor('lightningpixel/modly')
+    const file = '{appData}/Modly/settings.json'
+    assert.deepEqual(modly?.folders, [
+      {
+        id: 'extensions',
+        label: 'Extensions',
+        own: '{short}/ext',
+        installed: { file, key: 'extensionsDir', usual: '{documents}/Modly/extensions' },
+        use: 'installed'
+      },
+      {
+        id: 'workspace',
+        label: 'Workspace',
+        own: '{shared}/workspace',
+        installed: { file, key: 'workspaceDir', usual: '{documents}/Modly/workspace' },
+        use: 'own'
+      },
+      {
+        id: 'workflows',
+        label: 'Workflows',
+        own: '{shared}/workflows',
+        installed: { file, key: 'workflowsDir', usual: '{documents}/Modly/workflows' },
+        use: 'own'
+      }
+    ])
+    assert.deepEqual(modly?.seed?.find((s) => s.merge), {
+      path: 'settings.json',
+      json: { extensionsDir: '{folder:extensions}', workspaceDir: '{folder:workspace}', workflowsDir: '{folder:workflows}' },
+      merge: true
+    })
+    const once = modly?.seed?.find((s) => s.path === 'settings.json' && !s.merge)?.json as Record<string, string>
+    assert.deepEqual(Object.keys(once), ['modelsDir', 'dependenciesDir'], 'folders are set by the merged keys only')
   })
 })

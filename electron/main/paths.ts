@@ -98,7 +98,9 @@ export const appIcon = (): string =>
 /** Where the overlay button sits in an application's windows, shared by its branches. */
 export const overlaySettingsPath = (appId: string): string => join(appDir(appId), 'overlay.json')
 
-export const registryPath =(): string => join(rootDir(), 'registry.json')
+export const registryPath = (): string => join(rootDir(), 'registry.json')
+/** The registry as it was before its last change. */
+export const registryBackupPath = (): string => join(rootDir(), 'registry.backup.json')
 export const etagsPath = (): string => join(storeDir(), 'github-etags.json')
 export const settingsPath = (): string => join(rootDir(), 'settings.json')
 /** TryMyDev's own log, for what fails outside any branch. */

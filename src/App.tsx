@@ -9,7 +9,7 @@ import {
   StorageDialog,
   type Confirmation
 } from './dialogs'
-import type { AppView, Approval, BranchView, JobError, JobEvent } from './env'
+import type { AppView, Approval, BranchView, FolderView, JobError, JobEvent } from './env'
 import logo from '../resources/icon.svg'
 import { ShortcutButton } from './ShortcutButton'
 
@@ -238,6 +238,8 @@ function AppPanel({
         </div>
       </header>
 
+      <FoldersCard app={app} />
+
       <div className="add">
         <input
           value={input}
@@ -267,6 +269,113 @@ function AppPanel({
         ))}
       </div>
     </>
+  )
+}
+
+const FOLDERS_OPEN = 'trymydev.folders.open'
+
+/** A remembered view choice; storage may be unavailable, and then nothing is remembered. */
+function readPreference(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function writePreference(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    /* not remembered */
+  }
+}
+
+/** The application's folders the tester may point elsewhere, such as Modly's extensions. */
+function FoldersCard({ app }: { app: AppView }): JSX.Element | null {
+  const [folders, setFolders] = useState<FolderView[]>([])
+  const [error, setError] = useState<string | null>(null)
+  // Folded by default, one line; the choice is remembered for every application.
+  const [open, setOpen] = useState(() => readPreference(FOLDERS_OPEN) === '1')
+
+  useEffect(() => {
+    let live = true
+    setError(null)
+    window.trymydev
+      .folders(app.id)
+      .then((list) => live && setFolders(list))
+      .catch((err) => live && setError(clean(err)))
+    return () => {
+      live = false
+    }
+  }, [app.id, app.branches.length])
+
+  if (folders.length === 0 && !error) return null
+
+  const act = async (run: () => Promise<FolderView[]>): Promise<void> => {
+    setError(null)
+    try {
+      setFolders(await run())
+    } catch (err) {
+      setError(clean(err))
+    }
+  }
+  const origin: Record<FolderView['source'], string> = {
+    installed: `Your ${app.name} installation's`,
+    own: "TryMyDev's, shared by every branch",
+    custom: 'A folder you picked'
+  }
+  const brief: Record<FolderView['source'], string> = { installed: app.name, own: 'TryMyDev', custom: 'your folder' }
+  const toggle = (): void => {
+    setOpen(!open)
+    writePreference(FOLDERS_OPEN, open ? '0' : '1')
+  }
+
+  return (
+    <div className={open ? 'card folders open' : 'card folders'}>
+      <button type="button" className="folders-toggle" aria-expanded={open} onClick={toggle}>
+        <span className="chevron" aria-hidden="true">
+          ›
+        </span>
+        <span className="folders-title">Folders</span>
+        {!open && (
+          <span className="folders-summary">
+            {folders.map((folder) => `${folder.label}: ${brief[folder.source]}`).join(' · ')}
+          </span>
+        )}
+      </button>
+      {(open ? folders : []).map((folder) => (
+        <div key={folder.id} className="folder">
+          <div className="folder-text">
+            <span className="folder-label">{folder.label}</span>
+            <span className="folder-path" title={folder.path}>
+              {folder.path}
+            </span>
+            <span className="folder-source">{origin[folder.source]} · used the next time a branch starts</span>
+          </div>
+          <div className="folder-actions">
+            {folder.installed && folder.source !== 'installed' && (
+              <button
+                className="ghost"
+                title={folder.installed}
+                onClick={() => void act(() => window.trymydev.useFolder(app.id, folder.id, 'installed'))}
+              >
+                Use {app.name}
+              </button>
+            )}
+            {folder.source !== 'own' && (
+              <button className="ghost" onClick={() => void act(() => window.trymydev.useFolder(app.id, folder.id, 'own'))}>
+                Use TryMyDev
+              </button>
+            )}
+            <button className="ghost" onClick={() => void act(() => window.trymydev.chooseFolder(app.id, folder.id))}>
+              Change…
+            </button>
+          </div>
+        </div>
+      ))}
+      {error && <div className="add-error">{error}</div>}
+    </div>
   )
 }
 

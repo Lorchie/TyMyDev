@@ -1,7 +1,8 @@
-import { clipboard, ipcMain, shell, type BrowserWindow } from 'electron'
+import { clipboard, dialog, ipcMain, shell, type BrowserWindow } from 'electron'
 import { appendFileSync, mkdirSync } from 'fs'
 import { dirname } from 'path'
 import { appLog, errorText } from './applog'
+import { manifestOfApp, refusedFolder, resolveFolders, type FolderView } from './folders'
 import { rateLimit, resolveSource } from './github'
 import * as jobs from './jobs'
 import { validate } from './manifest'
@@ -10,7 +11,7 @@ import { readState } from './provision'
 import * as registry from './registry'
 import { isRunning } from './runner'
 import { forgetBranchSession, openExternalSafely, samePlace } from './security'
-import { hasGithubToken, setGithubToken } from './settings'
+import { hasGithubToken, preferences, setGithubToken, setPreference, type Preferences } from './settings'
 import { createShortcut } from './shortcut'
 import { parseInput } from './source-url'
 import { prune, usage } from './storage'
@@ -102,6 +103,46 @@ export function registerIpc(getWindow: () => BrowserWindow | null, home: string)
     return view()
   })
 
+  // An application's folders. A chosen one comes from the system's folder picker, never from
+  // the window; it applies the next time a branch starts.
+  const folders = async (appId: string): Promise<FolderView[]> => {
+    const app = registry.getApp(appId)
+    const manifest = manifestOfApp(app)
+    return manifest ? resolveFolders(app, manifest) : []
+  }
+  handle('apps:folders', (appId: string) => folders(appId))
+  handle('apps:chooseFolder', async (appId: string, id: string) => {
+    const current = (await folders(appId)).find((folder) => folder.id === id)
+    if (!current) throw new Error(`Refused: ${appId} has no folder ${id}.`)
+    const win = getWindow()
+    const options = {
+      title: `${current.label} folder`,
+      defaultPath: current.path,
+      properties: ['openDirectory', 'createDirectory'] as Array<'openDirectory' | 'createDirectory'>
+    }
+    const picked = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+    const chosen = picked.canceled ? undefined : picked.filePaths[0]
+    if (chosen) {
+      const refused = refusedFolder(chosen)
+      if (refused) throw new Error(refused)
+      registry.setFolder(appId, id, chosen)
+    }
+    return folders(appId)
+  })
+  // TryMyDev's folder or the installed application's: the paths are found again here, the
+  // window only says which. The manifest's own choice is stored as no choice at all.
+  handle('apps:useFolder', async (appId: string, id: string, which: 'own' | 'installed') => {
+    const app = registry.getApp(appId)
+    const spec = manifestOfApp(app)?.folders?.find((folder) => folder.id === id)
+    if (!spec) throw new Error(`Refused: ${appId} has no folder ${id}.`)
+    if (which !== 'own' && which !== 'installed') throw new Error(`Refused: no folder "${String(which)}".`)
+    if (which === 'installed' && !(await folders(appId)).find((folder) => folder.id === id)?.installed) {
+      throw new Error(`Refused: ${app.name} is not installed on this computer, or keeps no ${spec.label} folder.`)
+    }
+    registry.setFolder(appId, id, which === spec.use ? undefined : which)
+    return folders(appId)
+  })
+
   handle('branches:add', async (appId: string, input: string) => {
     const { source } = await resolveSource(parseInput(input))
     registry.addBranch(appId, source)
@@ -150,16 +191,20 @@ export function registerIpc(getWindow: () => BrowserWindow | null, home: string)
   // Download caches only go while nothing is installing from them.
   handle('storage:prune', () => prune({ caches: !jobs.installing() }))
 
-  handle('settings:get', () => ({ githubToken: hasGithubToken() }))
+  handle('settings:get', () => ({ githubToken: hasGithubToken(), ...preferences() }))
   handle('settings:setGithubToken', async (token: string | null) => {
     if (!token?.trim()) {
       setGithubToken(undefined)
-      return { githubToken: false }
+      return { githubToken: false, ...preferences() }
     }
     const limit = await rateLimit(token.trim())
     setGithubToken(token)
-    return { githubToken: true, limit }
+    return { githubToken: true, limit, ...preferences() }
   })
+  handle('settings:setPreference', (name: keyof Preferences, value: boolean) => ({
+    githubToken: hasGithubToken(),
+    ...setPreference(name, value)
+  }))
 
   // The folder is found from the registry, never built from what the window sends.
   handle('branches:openLogs', (_appId: string, key: string) => {

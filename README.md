@@ -13,6 +13,22 @@ owner/project@my-branch
 Nothing has to be set up on your side either: no CI, no installer, no release per branch, and
 it works on forks and on contributions from people outside your team.
 
+## Download
+
+| System | Installer |
+| --- | --- |
+| **Windows** 10 and 11 (x64) | [**TryMyDev-Setup.exe**](https://github.com/Lorchie/TyMyDev/releases/latest/download/TryMyDev-Setup.exe) |
+| **macOS** (Apple Silicon) | [**TryMyDev-arm64.dmg**](https://github.com/Lorchie/TyMyDev/releases/latest/download/TryMyDev-arm64.dmg) |
+| **Linux** (x64) | [**TryMyDev.AppImage**](https://github.com/Lorchie/TyMyDev/releases/latest/download/TryMyDev.AppImage) |
+
+Every version is on the [releases page](https://github.com/Lorchie/TyMyDev/releases). The
+installers are not signed with a paid certificate yet, so the system asks once:
+
+- **Windows** — SmartScreen says it protected your PC: *More info* → *Run anyway*.
+- **macOS** — right-click the app → *Open*, then confirm (or *System Settings* → *Privacy &
+  Security* → *Open Anyway*).
+- **Linux** — make the file executable (`chmod +x TryMyDev.AppImage`), then run it.
+
 ## What a run does
 
 1. **Resolve** — one conditional call to the GitHub API gives the branch's latest commit.
@@ -63,7 +79,8 @@ A manifest says how the project runs. TryMyDev looks for it in this order:
 | `when` | Runs a step, or picks a start, only on some machines: `platform` (`windows`, `macos`, `linux`) and `gpu` (`nvidia`, `amd`, `none`), one value or a list |
 | `share` | Directories that belong to the application, not to one branch — models, caches |
 | `isolate` | Variables redirected per branch, so two branches never write to the same place |
-| `seed` | Files and links placed in the branch data folder before it starts — `{ "path", "json" }`, written once unless `"always": true`, or `{ "path", "link" }`. Strings may use `{data}`, `{shared}`, `{short}`, `{venv}`, `{documents}` and `{sha256:<file>}` — `{short}` is a folder near the top of the home directory, for Python trees too deep for the 260-character limit of Windows |
+| `seed` | Files and links placed in the branch data folder before it starts — `{ "path", "json" }`, written once unless `"always": true`, `"merge": true` to set its keys at every start and keep the rest of the file, or `{ "path", "link" }`. Strings may use `{data}`, `{shared}`, `{short}`, `{venv}`, `{documents}`, `{appData}`, `{folder:<id>}` and `{sha256:<file>}` — `{short}` is a folder near the top of the home directory, for Python trees too deep for the 260-character limit of Windows |
+| `folders` | Folders the tester can switch, shown in the application's page: `{ "id", "label", "own", "installed", "use" }` — `own` is TryMyDev's (`{shared}/…` or `{short}/…`), `installed` an installed copy's (`{ "file", "key", "usual" }`: the path its settings file names, else its usual place), `use` which one until the tester switches. Seeds use it as `{folder:<id>}` |
 | `cacheKeys` | Files whose hash decides when an environment must be rebuilt |
 | `{port}` | Replaced with a free port, so two branches run side by side |
 | `runtime` | A Node version or range (`22`, `>=20`) and a Python version (`3.13`); latest release of that line |
@@ -72,6 +89,30 @@ Commands are split on spaces, honouring quotes, and run without a shell: no pipe
 no variable expansion — `.cmd` and `.bat` files included, whose arguments are escaped. Paths
 in `share`, `isolate`, `seed` and `cwd` must stay inside the project or the data folder, and a
 seed link must start with one of its folders.
+
+## Reporting a bug
+
+Every tested application — web or Electron — gets a small tools button in a corner of its
+window; drag it to either edge and it stays there. **Report bug** prepares a report of what just
+happened: a screenshot, the tester's clicks, the fields they typed in and the shortcuts they
+used over the last ten minutes, console errors, crashes, the end of the branch's log and the
+machine it ran on. The tester describes the problem, reads the whole report, and saves a `.zip`
+(`report.md`, `screenshot.png`, `logs.txt`) to send to the developer.
+
+What is typed is never recorded — only the field it went into — and password fields are
+ignored. Tokens, secrets named as such, e-mail addresses, user folders, the computer's name,
+web address parameters and public IP addresses are masked, in the description too. Masking
+catches what it recognises: the preview is there so the tester checks before sending. The
+screenshot is not masked; it can be left out. The button can be switched off in Settings.
+
+## Folders of an application
+
+An application's page shows the folders a branch uses, and each can be switched: **Use Modly**
+for the installed application's folder, **Use TryMyDev** for TryMyDev's own, shared by every
+branch, or **Change…** for any other. For Modly, extensions are the installed Modly's by default
+— some weigh 50 GB, a second set would fill the disk — while the workspace and the workflows
+are TryMyDev's, so a branch still in development never touches your own. A switch applies the
+next time a branch starts, to branches added before as well.
 
 ## Safety
 
@@ -117,6 +158,12 @@ Runtimes and content-addressed caches are global. Anything with a meaning inside
 application stays under that application. **Storage** shows what is used and removes what
 nothing references any more — download caches included, when nothing is installing.
 
+Each time TryMyDev starts, it also removes by itself what nothing uses any more: environments no
+branch points at, what removed branches left behind, and download caches unused for two weeks.
+Branches, runtimes, models, extensions, workspaces and workflows are never touched, and the
+cleanup can be switched off in Settings. A start that has to install stops first when less
+than 5 GB are free.
+
 ## Settings
 
 A **GitHub token** is optional. Without one, GitHub allows 60 requests an hour and no private
@@ -151,7 +198,8 @@ What a tester set up for their own work does not change how a branch installs:
 The error pop-up carries the end of the log, and — for failures seen before, such as a
 PyTorch without GPU support, a port already taken or a missing build toolchain — what to do
 about it. Failures outside any branch go to TryMyDev's own log, `logs/main.log`. An unreadable
-`registry.json` is reported and left untouched: nothing is deleted until it is repaired.
+`registry.json` is reported and left untouched, and nothing is deleted meanwhile: TryMyDev keeps
+the registry as it was before its last change, `registry.backup.json`, and offers to restore it.
 
 ## What it cannot do
 
@@ -174,7 +222,11 @@ npm run typecheck
 npm test               # unit tests; TRYMYDEV_NETWORK_TESTS=1 adds the download test
 npm run test:e2e       # builds, then drives the real window
 npm run package        # Windows; package:mac and package:linux for the others
+npm run icons          # resources/icon.svg → the icons of the three systems
 ```
+
+A release is a tag: `git tag v0.2.0 && git push origin v0.2.0` builds the three installers on
+GitHub Actions and attaches them to a new release, which the download links above follow.
 
 Open one branch directly:
 
@@ -186,7 +238,8 @@ trymydev --start=owner/project@my-branch
 
 ```
 <TryMyDev userData>/
-  registry.json                    applications, branches and approvals
+  registry.json                    applications, branches, approvals and folder switches
+  registry.backup.json             the registry before its last change
   settings.json                    GitHub token, encrypted
   logs/main.log                    TryMyDev's own log
   apps/<app>/branches/<ref-hash>/  checkout, data, logs, state

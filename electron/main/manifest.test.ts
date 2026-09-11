@@ -224,6 +224,57 @@ describe('seed', () => {
       'link in the data folder: deps/venv → {venv}'
     ])
   })
+
+  it('merges the keys of an object, and never together with always', () => {
+    const merged = { path: 'settings.json', json: { ext: '{appData}/App/ext' }, merge: true }
+    assert.equal(parse({ ...minimal, seed: [merged] }).seed?.[0].merge, true)
+    invalid({ ...minimal, seed: [{ ...merged, merge: 'yes' }] }, /"merge" must be true or false/)
+    invalid({ ...minimal, seed: [{ ...merged, always: true }] }, /cannot go with "always"/)
+    invalid({ ...minimal, seed: [{ path: 'a.json', json: ['x'], merge: true }] }, /needs "json" to be an object/)
+  })
+})
+
+describe('folders', () => {
+  const extensions = {
+    id: 'extensions',
+    label: 'Extensions',
+    own: '{short}/ext',
+    installed: { file: '{appData}/App/settings.json', key: 'extensionsDir', usual: '{documents}/App/extensions' },
+    use: 'installed'
+  }
+
+  it('declares folders a seed uses by id', () => {
+    const m = parse({ ...minimal, folders: [extensions], seed: [{ path: 's.json', json: { ext: '{folder:extensions}' } }] })
+    assert.equal(m.folders?.[0].id, 'extensions')
+    assert.equal(parse({ ...minimal, folders: [{ id: 'presets', label: 'Presets', own: '{shared}/presets', use: 'own' }] }).folders?.length, 1)
+  })
+
+  it('refuses a folder a seed uses without declaring it', () => {
+    invalid({ ...minimal, seed: [{ path: 's.json', json: '{folder:extensions}' }] }, /\{folder:extensions\} is not one of the manifest's "folders"/)
+  })
+
+  it('needs an id, a label, paths starting in folders it knows, and which one to use', () => {
+    invalid({ ...minimal, folders: 'extensions' }, /"folders" must be a list/)
+    invalid({ ...minimal, folders: [{ ...extensions, id: 'my-ext' }] }, /its own "id"/)
+    invalid({ ...minimal, folders: [extensions, extensions] }, /its own "id"/)
+    invalid({ ...minimal, folders: [{ ...extensions, label: ' ' }] }, /needs a "label"/)
+    for (const path of ['C:\\Users\\x', '{documents}/App', '{data}/ext', '{shared}/../..', '{shared}/{venv}']) {
+      invalid({ ...minimal, folders: [{ ...extensions, own: path }] }, /"own" must start with \{shared\}, \{short\}/)
+    }
+    invalid({ ...minimal, folders: [{ ...extensions, installed: { ...extensions.installed, file: '/etc/passwd' } }] }, /"installed.file" must start/)
+    invalid({ ...minimal, folders: [{ ...extensions, installed: { ...extensions.installed, usual: 'D:\\App' } }] }, /"installed.usual" must start/)
+    invalid({ ...minimal, folders: [{ ...extensions, installed: { ...extensions.installed, key: '' } }] }, /"installed.key"/)
+    invalid({ ...minimal, folders: [{ ...extensions, use: 'both' }] }, /"use" must be "own"/)
+    invalid({ ...minimal, folders: [{ id: 'x', label: 'X', own: '{shared}/x', use: 'installed' }] }, /"installed" with an "installed" folder/)
+  })
+
+  it('shows where each folder will be before approval, and that the tester can switch', () => {
+    const m = parse({ ...minimal, folders: [extensions, { ...extensions, id: 'workflows', label: 'Workflows', own: '{shared}/workflows', use: 'own' }] })
+    assert.deepEqual(approvalOf({ id: 'o-r', name: 'R', addedAt: '' }, m, { owner: 'o', repo: 'r', ref: 'main' }).settings, [
+      "folder \"Extensions\": the installed application's (extensionsDir in {appData}/App/settings.json, else {documents}/App/extensions), else TryMyDev's {short}/ext — you can switch",
+      "folder \"Workflows\": TryMyDev's {shared}/workflows, or the installed application's (extensionsDir in {appData}/App/settings.json, else {documents}/App/extensions) — you can switch"
+    ])
+  })
 })
 
 describe('manifestHash', () => {
@@ -243,7 +294,8 @@ describe('manifestHash', () => {
       { isolate: [{ env: 'HOME', dir: 'home' }] },
       { env: { A: '1' } },
       { runtime: { node: '20' } },
-      { seed: [{ path: 'settings.json', json: { home: '{data}' } }] }
+      { seed: [{ path: 'settings.json', json: { home: '{data}' } }] },
+      { folders: [{ id: 'ext', label: 'Extensions', own: '{shared}/ext', use: 'own' }] }
     ]) {
       assert.notEqual(manifestHash(parse({ ...minimal, ...change })), base, JSON.stringify(change))
     }

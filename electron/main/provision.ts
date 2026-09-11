@@ -23,10 +23,12 @@ import {
   checkoutDir,
   nodeCacheDir,
   nodeModulesStore,
+  rootDir,
   statePath,
   tmpDir,
   venvStore
 } from './paths'
+import { ensureFreeSpace } from './storage'
 import { run, type Toolchain } from './proc'
 import * as registry from './registry'
 import { expectedElectronMajor, needsOwnElectron, resolveElectronBinary } from './runner'
@@ -136,6 +138,8 @@ export async function provision(
     : undefined
   // Recorded before the stores are touched, so a prune running meanwhile keeps them.
   patchState(app.id, branch.key, { nodeKey, pythonKey })
+  // An install stopped by a full disk leaves half a tree behind: better not to begin one.
+  if (!isInstalled(nodeKey, pythonKey)) await ensureFreeSpace(rootDir())
 
   if (pythonKey) {
     toolchain.venvPython = await ensureVenv(pythonKey, toolchain, log, emit, signal)

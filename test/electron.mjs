@@ -270,10 +270,16 @@ export const safeStorage = {
 /** The save dialog answers with `savePath`, or is cancelled when there is none. */
 export const dialog = {
   savePath: undefined,
+  /** The folder picker answers with `openPath`, or is cancelled when there is none. */
+  openPath: undefined,
   asked: [],
   showSaveDialog(window, options) {
     dialog.asked.push(options)
     return Promise.resolve(dialog.savePath ? { canceled: false, filePath: dialog.savePath } : { canceled: true })
+  },
+  showOpenDialog(window, options) {
+    dialog.asked.push(options ?? window)
+    return Promise.resolve(dialog.openPath ? { canceled: false, filePaths: [dialog.openPath] } : { canceled: true, filePaths: [] })
   }
 }
 

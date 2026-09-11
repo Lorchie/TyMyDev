@@ -61,7 +61,8 @@ export interface IsolateSpec {
 /**
  * A file or link the application finds in its data folder when it starts: settings that
  * point at the right folders, a marker saying a setup screen was already done for it.
- * Strings may use {data}, {shared}, {venv}, {documents} and {sha256:<checkout file>}.
+ * Strings may use {data}, {shared}, {venv}, {documents}, {appData}, {folder:<id>} and
+ * {sha256:<checkout file>}.
  */
 export interface SeedSpec {
   /** Path inside the branch data folder. */
@@ -71,7 +72,28 @@ export interface SeedSpec {
   /** Directory the path links to, placed again at every start. */
   link?: string
   always?: boolean
+  /** The keys of `json` are set at every start; the rest of the file stays as the application left it. */
+  merge?: boolean
 }
+
+/**
+ * A folder of the application, per application, that is either TryMyDev's own or the one of an
+ * installed copy of the application — or one the tester chose. Seeds use it as {folder:<id>}.
+ */
+export interface FolderSpec {
+  id: string
+  /** What the tester reads beside it. */
+  label: string
+  /** TryMyDev's folder for it, the same for every branch: starts with {shared} or {short}. */
+  own: string
+  /** An installed copy's folder: the path its settings file names, else where it usually is. */
+  installed?: { file: string; key: string; usual: string }
+  /** The one used until the tester switches; `installed` falls back to `own` when there is none. */
+  use: 'own' | 'installed'
+}
+
+/** The tester's choice for a folder: one of the two, or a folder of their own. */
+export type FolderChoice = 'own' | 'installed' | string
 
 export interface Manifest {
   /** Display name of the application. */
@@ -86,6 +108,7 @@ export interface Manifest {
   share?: ShareSpec[]
   isolate?: IsolateSpec[]
   seed?: SeedSpec[]
+  folders?: FolderSpec[]
   env?: Record<string, string>
   /** Files whose hash decides when a cached environment must be rebuilt. */
   cacheKeys?: { node?: string[]; python?: string[] }
@@ -112,6 +135,8 @@ export interface App {
   approvals?: Approved[]
   /** Approvals recorded by earlier versions: bare hashes, valid for the upstream only. */
   approvedHashes?: string[]
+  /** Folders the tester switched, by the id the manifest gives them. */
+  folders?: Record<string, FolderChoice>
   addedAt: string
 }
 

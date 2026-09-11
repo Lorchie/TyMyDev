@@ -1,5 +1,5 @@
-import { app, BrowserWindow, dialog, session } from 'electron'
-import { mkdirSync } from 'fs'
+import { app, BrowserWindow, dialog, session, shell } from 'electron'
+import { mkdirSync, statSync } from 'fs'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { appLog, errorText } from './applog'
@@ -9,7 +9,18 @@ import { reattach, refresh, startBranch } from './jobs'
 import * as registry from './registry'
 import { confine, restrictPermissions } from './security'
 import { parseInput } from './source-url'
-import { appIcon, appsDir, chooseUserData, rootDir, storeDir } from './paths'
+import {
+  appIcon,
+  appLogPath,
+  appsDir,
+  chooseUserData,
+  registryBackupPath,
+  registryPath,
+  rootDir,
+  storeDir
+} from './paths'
+import { preferences } from './settings'
+import { prune, setIdleCachesAside } from './storage'
 import { PRODUCT } from './types'
 
 let mainWindow: BrowserWindow | null = null
@@ -92,6 +103,58 @@ async function autoStart(argv: string[] = process.argv): Promise<void> {
   }
 }
 
+/**
+ * Everything reads the registry: unreadable, TryMyDev would start with no window at all. It
+ * offers the previous version instead, keeping the unreadable file beside it.
+ */
+async function registryUsable(): Promise<boolean> {
+  const problem = registry.problem()
+  if (!problem) return true
+  appLog(`[registry] ${problem.message}`)
+  const canRestore = registry.backupReadable()
+  const saved = canRestore ? statSync(registryBackupPath()).mtime.toLocaleString() : ''
+  const buttons = canRestore ? ['Restore the previous version', 'Show the file', 'Quit'] : ['Show the file', 'Quit']
+  const { response } = await dialog.showMessageBox({
+    type: 'error',
+    title: PRODUCT.name,
+    message: 'The list of applications cannot be read',
+    detail: canRestore
+      ? `${problem.message}\n\nIts previous version, saved ${saved}, can take its place. The unreadable file is kept beside it.`
+      : problem.message,
+    buttons,
+    defaultId: 0,
+    cancelId: buttons.length - 1
+  })
+  if (canRestore && response === 0) {
+    try {
+      const broken = registry.restoreBackup()
+      appLog(`[registry] restored its previous version; the unreadable one is ${broken}`)
+      return true
+    } catch (err) {
+      dialog.showErrorBox(`${PRODUCT.name} — restore failed`, errorText(err))
+    }
+  } else if (buttons[response] === 'Show the file') {
+    shell.showItemInFolder(registryPath())
+  }
+  app.quit()
+  return false
+}
+
+/**
+ * Unused environments, leftovers of removed branches, and download caches idle for two weeks.
+ * The caches are set aside before anything can install; the deleting goes on in the
+ * background, under the same locks as installs.
+ */
+async function cleanUpAtStart(): Promise<void> {
+  const setAside = await setIdleCachesAside()
+  if (setAside.length > 0) appLog(`[storage] idle download caches set aside: ${setAside.join(', ')}`)
+  void prune()
+    .then((bytes) => {
+      if (bytes > 0) appLog(`[storage] cleaned up at start: ${(bytes / 1024 ** 3).toFixed(2)} GB freed`)
+    })
+    .catch((err) => appLog(`[storage] cleanup at start failed: ${errorText(err)}`))
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
@@ -110,11 +173,14 @@ if (!app.requestSingleInstanceLock()) {
     // Electron grants every permission a page asks for; the TryMyDev window needs none.
     restrictPermissions(session.defaultSession)
 
+    if (!(await registryUsable())) return
+
     const moved = await registry.migrateKeys((folder, err) =>
       appLog(`[app] ${folder} keeps its old key for now: ${err.code} — a file inside is open elsewhere`)
     )
     if (moved > 0) appLog(`[app] ${moved} branch folder(s) moved to short keys`)
     await reattach(() => mainWindow)
+    if (preferences().autoCleanup) await cleanUpAtStart()
 
     registerIpc(() => mainWindow, home)
     createWindow()
@@ -126,6 +192,11 @@ if (!app.requestSingleInstanceLock()) {
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })
+  }).catch((err) => {
+    // A start that fails before the window exists would leave TryMyDev running unseen.
+    appLog(`[app] start failed: ${errorText(err)}`)
+    dialog.showErrorBox(`${PRODUCT.name} could not start`, `${errorText(err)}\n\nDetails are in ${appLogPath()}.`)
+    app.quit()
   })
 
   // Applications we started are detached on purpose: closing TryMyDev leaves

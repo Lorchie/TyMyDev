@@ -61,6 +61,21 @@ export interface UsageEntry {
 
 export interface Settings {
   githubToken: boolean
+  /** Unused data removed when TryMyDev starts. */
+  autoCleanup: boolean
+  /** The tools overlay on tested applications. */
+  overlay: boolean
+}
+
+/** A folder of an application: TryMyDev's own, the installed application's, or one the tester picked. */
+export interface FolderView {
+  id: string
+  label: string
+  path: string
+  source: 'own' | 'installed' | 'custom'
+  chosen: boolean
+  /** The installed application's folder, when there is one to switch to. */
+  installed?: string
 }
 
 export interface Api {
@@ -68,6 +83,9 @@ export interface Api {
   list: () => Promise<AppView[]>
   addApp: (input: string, manifest?: string) => Promise<AppView[]>
   removeApp: (appId: string) => Promise<AppView[]>
+  folders: (appId: string) => Promise<FolderView[]>
+  chooseFolder: (appId: string, id: string) => Promise<FolderView[]>
+  useFolder: (appId: string, id: string, which: 'own' | 'installed') => Promise<FolderView[]>
   addBranch: (appId: string, input: string) => Promise<AppView[]>
   removeBranch: (key: string) => Promise<AppView[]>
   start: (key: string) => Promise<void>
@@ -79,6 +97,7 @@ export interface Api {
   prune: () => Promise<number>
   getSettings: () => Promise<Settings>
   setGithubToken: (token: string | null) => Promise<Settings & { limit?: number }>
+  setPreference: (name: 'autoCleanup' | 'overlay', value: boolean) => Promise<Settings>
   openLogs: (appId: string, key: string) => Promise<void>
   openAppLog: () => Promise<string>
   reportError: (message: string) => Promise<void>

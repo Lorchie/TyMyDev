@@ -9,6 +9,7 @@ import { BranchLog } from './logger'
 import { appShared, branchDataDir, checkoutDir, shortDir, shortOwnerPath } from './paths'
 import type { Toolchain } from './proc'
 import { adopt, expectedElectronMajor, isRunning, launch, needsOwnElectron, stop, type LaunchResult } from './runner'
+import { setPreference } from './settings'
 import { cleanup, isAlive, until, useUserData } from './testing'
 import type { App, Branch, Manifest } from './types'
 
@@ -270,6 +271,23 @@ describe('launch', () => {
     assert.equal(env.models, appShared(app.id, 'models'))
   })
 
+  it('refuses to start with a chosen folder that is gone, rather than making it anew, empty', async () => {
+    const b = branch()
+    const manifest: Manifest = {
+      name: 'Folders',
+      start: { mode: 'command', run: 'node -e "0"' },
+      folders: [{ id: 'extensions', label: 'Extensions', own: '{shared}/extensions', use: 'own' }],
+      seed: [{ path: 'settings.json', json: { ext: '{folder:extensions}' }, merge: true }]
+    }
+    const unplugged = join(data, 'unplugged-drive', 'extensions')
+    const log = new BranchLog(app.id, b.key)
+    await assert.rejects(
+      launch({ ...app, folders: { extensions: unplugged } }, b, manifest, {}, toolchain, log, new AbortController().signal, () => {}),
+      /The Extensions folder you chose, .*unplugged-drive.*, is not there/
+    )
+    assert.equal(isRunning(b.key), false)
+  })
+
   it('places the seeds in the data folder before the application starts', async () => {
     const b = branch({ 'read.js': "console.log('seeded ' + require('fs').readFileSync(process.argv[2], 'utf-8'))" })
     const settings = join(branchDataDir(app.id, b.key), 'settings.json')
@@ -329,6 +347,21 @@ describe('launch of an Electron application', () => {
       report: { source: `o/r · ${b.ref}`, log: logPath }
     })
     assert.match(tail, /application --user-data-dir=/)
+  })
+
+  it('starts the application as it is when the tools overlay is switched off', async () => {
+    const appPath = join(data, 'launcher-off')
+    mkdirSync(join(appPath, 'out', 'main'), { recursive: true })
+    writeFileSync(join(appPath, 'out', 'main', 'inject.js'), "console.log('preloaded ' + process.env.TRYMYDEV_OVERLAY)")
+    setPreference('overlay', false)
+    try {
+      const { tail } = await launchDesktop(appPath)
+      assert.ok(!tail.includes('preloaded'), tail)
+      assert.match(tail, /tools overlay switched off in Settings/)
+      assert.match(tail, /application --user-data-dir=/)
+    } finally {
+      setPreference('overlay', true)
+    }
   })
 
   it('still starts the application when the overlay is not built', async () => {

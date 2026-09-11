@@ -5,6 +5,7 @@ import { mkdir } from 'fs/promises'
 import { createConnection, createServer } from 'net'
 import { basename, join } from 'path'
 import { attachOverlay, type OverlayOptions } from '../overlay/attach'
+import { folderPaths, missingChosen, resolveFolders } from './folders'
 import { startFor } from './manifest'
 import { writeJson } from './fsx'
 import {
@@ -20,6 +21,7 @@ import {
   shortOwnerPath
 } from './paths'
 import { label as sourceLabel } from './registry'
+import { preferences } from './settings'
 import {
   buildEnv,
   capture,
@@ -77,8 +79,19 @@ export async function launch(
   const data = branchDataDir(app.id, branch.key)
   await mkdir(data, { recursive: true })
   const short = shortDir(app.id)
+  const folders = await resolveFolders(app, manifest)
+  for (const folder of folders) log.line(`[folders] ${folder.label}: ${folder.path} (${folder.source})`)
+  const missing = missingChosen(folders)
+  if (missing) {
+    throw new Error(
+      `The ${missing.label} folder you chose, ${missing.path}, is not there — on a drive not connected, an ` +
+        `application uninstalled, or moved. Connect it, or switch it in ${app.name}'s page.`
+    )
+  }
   // Claimed only by an application that uses it, so Storage knows whose it is.
-  if (JSON.stringify(manifest.seed ?? []).includes('{short}') && !existsSync(shortOwnerPath(short))) {
+  const usesShort =
+    JSON.stringify(manifest.seed ?? []).includes('{short}') || folders.some((folder) => folder.path.startsWith(short))
+  if (usesShort && !existsSync(shortOwnerPath(short))) {
     writeJson(shortOwnerPath(short), { root: rootDir(), appId: app.id })
   }
   await placeSeeds(manifest.seed, {
@@ -87,7 +100,9 @@ export async function launch(
     shared: appSharedDir(app.id),
     short,
     documents: electronApp.getPath('documents'),
-    venvPython: toolchain.venvPython
+    appData: electronApp.getPath('appData'),
+    venvPython: toolchain.venvPython,
+    folders: folderPaths(folders)
   })
 
   const extraEnv: Record<string, string> = {}
@@ -104,14 +119,19 @@ export async function launch(
 
   const ctx: RunContext = { toolchain, cwd: checkout, log, extraEnv }
   const start = startFor(manifest)
+  const label = `${manifest.name} · ${branch.ref}`
   const { page, preload } = overlayFiles()
-  const overlay: OverlayOptions = {
-    page,
-    preload,
-    label: `${manifest.name} · ${branch.ref}`,
-    settings: overlaySettingsPath(app.id),
-    report: { source: sourceLabel(branch), commit: state.builtSha ?? state.sha, log: log.path }
-  }
+  // Switched off in Settings, the application starts exactly as it would without TryMyDev's tools.
+  const overlay: OverlayOptions | undefined = preferences().overlay
+    ? {
+        page,
+        preload,
+        label,
+        settings: overlaySettingsPath(app.id),
+        report: { source: sourceLabel(branch), commit: state.builtSha ?? state.sha, log: log.path }
+      }
+    : undefined
+  if (!overlay) log.line('[launch] tools overlay switched off in Settings')
 
   if (start.mode === 'electron') {
     const bin = state.electronBinary ?? process.execPath
@@ -140,7 +160,7 @@ export async function launch(
     throw err
   }
 
-  const window = openWindow(url, overlay, branch.key)
+  const window = openWindow(url, label, branch.key, overlay)
   track(branch.key, { child, pid: child.pid ?? 0, window }, onExit, log)
   log.line(`[launch] serving ${url}`)
   return { url }
@@ -255,19 +275,19 @@ function launchElectron(
   bin: string,
   checkout: string,
   data: string,
-  overlay: OverlayOptions,
+  overlay: OverlayOptions | undefined,
   ctx: RunContext,
   output: number
 ): ChildProcess {
   const { inject } = overlayFiles()
-  const preload = existsSync(inject) ? ['-r', inject] : []
-  if (preload.length === 0) ctx.log.line(`[launch] no overlay: ${inject} is missing`)
+  const preload = overlay && existsSync(inject) ? ['-r', inject] : []
+  if (overlay && preload.length === 0) ctx.log.line(`[launch] no overlay: ${inject} is missing`)
   const args = [...preload, checkout, `--user-data-dir=${data}`]
   ctx.log.line(`[launch] ${bin} ${args.join(' ')}`)
   // Detached so closing TryMyDev does not take the application down with it.
   return spawn(bin, args, {
     cwd: checkout,
-    env: { ...buildEnv(ctx), TRYMYDEV_OVERLAY: JSON.stringify(overlay) },
+    env: { ...buildEnv(ctx), ...(overlay ? { TRYMYDEV_OVERLAY: JSON.stringify(overlay) } : {}) },
     detached: true,
     stdio: ['ignore', output, output],
     windowsHide: false
@@ -388,11 +408,11 @@ function answers(port: number, host: string): Promise<boolean> {
  * A tested web application gets a sandboxed window of its own, with the cookies and
  * permissions of its branch only, no way to navigate TryMyDev elsewhere, and the overlay.
  */
-function openWindow(url: string, overlay: OverlayOptions, key: string): BrowserWindow {
+function openWindow(url: string, title: string, key: string, overlay?: OverlayOptions): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
     height: 860,
-    title: overlay.label,
+    title,
     icon: appIcon(),
     autoHideMenuBar: true,
     backgroundColor: '#12131a',
@@ -401,6 +421,6 @@ function openWindow(url: string, overlay: OverlayOptions, key: string): BrowserW
   window.setMenuBarVisibility(false)
   confine(window.webContents, url)
   void window.loadURL(url)
-  attachOverlay(window, overlay)
+  if (overlay) attachOverlay(window, overlay)
   return window
 }

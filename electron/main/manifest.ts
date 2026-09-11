@@ -4,7 +4,7 @@ import { detectManifest } from './detect'
 import { hashString } from './fsx'
 import { machine, matches } from './machine'
 import { builtinFor } from './profiles/builtin'
-import { FOLDER_PLACEHOLDERS, PLACEHOLDER } from './seed'
+import { FOLDER_PLACEHOLDERS, PLACEHOLDER, ROOT_PLACEHOLDERS } from './seed'
 import {
   PRODUCT,
   type App,
@@ -103,6 +103,29 @@ export function validate(text: string, origin: string): Manifest {
       inside(iso.dir, `${origin}: "isolate" dir`)
     }
   }
+  const folderIds = new Set<string>()
+  if (m.folders !== undefined) {
+    if (!Array.isArray(m.folders)) throw new Error(`${origin}: "folders" must be a list.`)
+    for (const folder of m.folders) {
+      if (typeof folder?.id !== 'string' || !/^[A-Za-z][A-Za-z0-9]*$/.test(folder.id) || folderIds.has(folder.id)) {
+        throw new Error(`${origin}: every folder needs its own "id", made of letters and digits.`)
+      }
+      folderIds.add(folder.id)
+      const what = `${origin}: folder ${folder.id}`
+      if (typeof folder.label !== 'string' || folder.label.trim() === '') throw new Error(`${what} needs a "label".`)
+      rooted(folder.own, `${what}: "own"`, OWN_ROOTS)
+      if (folder.installed !== undefined) {
+        rooted(folder.installed?.file, `${what}: "installed.file"`)
+        rooted(folder.installed.usual, `${what}: "installed.usual"`)
+        if (typeof folder.installed.key !== 'string' || folder.installed.key === '') {
+          throw new Error(`${what}: "installed.key" must name the key holding the path.`)
+        }
+      }
+      if (folder.use !== 'own' && !(folder.use === 'installed' && folder.installed)) {
+        throw new Error(`${what}: "use" must be "own", or "installed" with an "installed" folder.`)
+      }
+    }
+  }
   if (m.seed !== undefined) {
     if (!Array.isArray(m.seed)) throw new Error(`${origin}: "seed" must be a list.`)
     for (const seed of m.seed) {
@@ -114,6 +137,12 @@ export function validate(text: string, origin: string): Manifest {
       if (seed.always !== undefined && typeof seed.always !== 'boolean') {
         throw new Error(`${what}: "always" must be true or false.`)
       }
+      if (seed.merge !== undefined) {
+        if (typeof seed.merge !== 'boolean') throw new Error(`${what}: "merge" must be true or false.`)
+        if (seed.merge && (seed.always || !seed.json || typeof seed.json !== 'object' || Array.isArray(seed.json))) {
+          throw new Error(`${what}: "merge" needs "json" to be an object, and cannot go with "always".`)
+        }
+      }
       if (seed.link !== undefined) {
         // A link lands in a folder TryMyDev knows, never at an arbitrary place on the disk.
         const folder = typeof seed.link === 'string' ? seed.link.match(/^\{([a-z]+)\}(.*)$/) : null
@@ -121,7 +150,7 @@ export function validate(text: string, origin: string): Manifest {
           throw new Error(`${what}: "link" must start with {${FOLDER_PLACEHOLDERS.join('}, {')}} and stay inside it.`)
         }
       }
-      for (const text of strings(seed.link ?? seed.json)) placeholders(text, what)
+      for (const text of strings(seed.link ?? seed.json)) placeholders(text, what, folderIds)
     }
   }
   const env: unknown = m.env
@@ -168,15 +197,30 @@ function strings(value: unknown): string[] {
 }
 
 /** A misspelt placeholder would reach the application as text, so each one is checked. */
-function placeholders(text: string, what: string): void {
+function placeholders(text: string, what: string, folderIds: Set<string>): void {
   for (const [whole, name, arg] of text.matchAll(PLACEHOLDER)) {
     if (name === 'sha256' && arg !== undefined) {
       inside(arg, `${what}: the file of ${whole}`)
-    } else if (arg !== undefined || !FOLDER_PLACEHOLDERS.includes(name)) {
+    } else if (name === 'folder' && arg !== undefined) {
+      if (!folderIds.has(arg)) throw new Error(`${what}: ${whole} is not one of the manifest's "folders".`)
+    } else if (arg !== undefined || !ROOT_PLACEHOLDERS.includes(name)) {
       throw new Error(
-        `${what}: unknown placeholder ${whole} (${FOLDER_PLACEHOLDERS.map((p) => `{${p}}`).join(', ')} or {sha256:file}).`
+        `${what}: unknown placeholder ${whole} (${ROOT_PLACEHOLDERS.map((p) => `{${p}}`).join(', ')}, {folder:id} or {sha256:file}).`
       )
     }
+  }
+}
+
+/** Folders known for every branch of an application: where an installed copy's folders may be. */
+const FOLDER_ROOTS = ['shared', 'short', 'documents', 'appData']
+/** TryMyDev's own folders for an application. */
+const OWN_ROOTS = ['shared', 'short']
+
+/** A path starting in one of `roots`, and staying inside it. */
+function rooted(path: unknown, what: string, roots: string[] = FOLDER_ROOTS): void {
+  const match = typeof path === 'string' ? path.match(/^\{([A-Za-z]+)\}([^{}]*)$/) : null
+  if (!match || !roots.includes(match[1]) || match[2].split(/[\\/]+/).includes('..')) {
+    throw new Error(`${what} must start with {${roots.join('}, {')}} and stay inside it.`)
   }
 }
 
@@ -237,7 +281,8 @@ export function manifestHash(m: Manifest): string {
       env: m.env ?? {},
       runtime: m.runtime ?? {},
       // Only when present: approvals given before seeds existed stay valid.
-      ...(m.seed ? { seed: m.seed } : {})
+      ...(m.seed ? { seed: m.seed } : {}),
+      ...(m.folders ? { folders: m.folders } : {})
     })
   )
 }
@@ -256,10 +301,19 @@ function settingsOf(m: Manifest): string[] {
   return [
     ...(m.share ?? []).map((s) => `shared by every branch: ${s.path}${s.env ? ` (${s.env})` : ''}`),
     ...(m.isolate ?? []).map((i) => `separate per branch: ${i.env} → ${i.dir}`),
+    ...(m.folders ?? []).map((f) => {
+      const installed = f.installed
+        ? `the installed application's (${f.installed.key} in ${f.installed.file}, else ${f.installed.usual})`
+        : undefined
+      const first = f.use === 'installed' && installed ? `${installed}, else TryMyDev's ${f.own}` : `TryMyDev's ${f.own}`
+      return `folder "${f.label}": ${first}${installed && f.use === 'own' ? `, or ${installed}` : ''} — you can switch`
+    }),
     ...(m.seed ?? []).map((s) =>
       s.link !== undefined
         ? `link in the data folder: ${s.path} → ${s.link}`
-        : `file in the data folder, ${s.always ? 'at every start' : 'once'}: ${s.path} = ${JSON.stringify(s.json)}`
+        : s.merge
+          ? `keys set in the data folder at every start: ${s.path} = ${JSON.stringify(s.json)}`
+          : `file in the data folder, ${s.always ? 'at every start' : 'once'}: ${s.path} = ${JSON.stringify(s.json)}`
     ),
     ...Object.entries(m.env ?? {}).map(([name, value]) => `environment: ${name}=${value}`)
   ]

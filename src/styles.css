@@ -139,6 +139,114 @@ button.ghost.danger:not(:disabled):hover {
   border-color: #2f5c4a;
 }
 
+.folders {
+  margin-bottom: 16px;
+  padding: 0;
+}
+
+.folders .folder,
+.folders .add-error {
+  margin-left: 16px;
+  margin-right: 16px;
+}
+
+.folders.open {
+  padding-bottom: 12px;
+}
+
+.folders-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+}
+
+.folders-toggle:hover,
+.folders-toggle:focus-visible {
+  color: var(--text);
+  outline: none;
+}
+
+.folders.open .folders-toggle {
+  margin-bottom: 4px;
+}
+
+.chevron {
+  display: inline-block;
+  width: 10px;
+  font-size: 16px;
+  line-height: 1;
+  transition: transform 0.12s ease;
+}
+
+.folders.open .chevron {
+  transform: rotate(90deg);
+}
+
+.folders-title {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.folders-summary {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.folder + .folder {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.folder-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.folder-label {
+  font-weight: 600;
+}
+
+.folder-path {
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+
+.folder-source {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.folder-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -508,6 +616,28 @@ main {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   resize: vertical;
+}
+
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 4px 0 8px;
+  cursor: pointer;
+}
+
+.dialog .option input {
+  flex: none;
+  width: auto;
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+
+.option small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .dialog input:focus,

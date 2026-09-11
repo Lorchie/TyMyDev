@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'fs'
-import { readdir, stat } from 'fs/promises'
+import { mkdir, readdir, rename, stat, statfs } from 'fs/promises'
 import { join } from 'path'
+import { appLog } from './applog'
 import { readJson, removePath, removeTree } from './fsx'
 import { withLock } from './lock'
 import {
@@ -73,15 +74,104 @@ async function sizeOf(path: string): Promise<number> {
   return total
 }
 
-function referencedKeys(): { node: Set<string>; python: Set<string> } {
+/**
+ * The environments branches use. A branch whose state cannot be read is listed apart: its
+ * environments would look unused, and removing them costs a reinstall of gigabytes.
+ */
+function referencedKeys(): { node: Set<string>; python: Set<string>; unreadable: string[] } {
   const node = new Set<string>()
   const python = new Set<string>()
+  const unreadable: string[] = []
   for (const branch of registry.branches()) {
-    const state = readJson<BranchState>(statePath(branch.appId, branch.key), {})
+    const path = statePath(branch.appId, branch.key)
+    let state: BranchState = {}
+    if (existsSync(path)) {
+      try {
+        state = JSON.parse(readFileSync(path, 'utf-8')) as BranchState
+      } catch {
+        unreadable.push(branch.key)
+        continue
+      }
+    }
     if (state.nodeKey) node.add(state.nodeKey)
     if (state.pythonKey) python.add(state.pythonKey)
   }
-  return { node, python }
+  return { node, python, unreadable }
+}
+
+/** Where cleanups put what they remove: moved there in one rename, deleted afterwards. */
+const trashDir = (): string => join(storeDir(), 'trash')
+
+/** A download cache nothing was added to for this long is set aside when TryMyDev starts. */
+export const CACHE_IDLE_MS = 14 * 24 * 60 * 60 * 1000
+
+/** The latest change to a folder or the folders right inside it: where a tool adds to its cache. */
+async function lastChange(dir: string): Promise<number> {
+  let latest = (await stat(dir)).mtimeMs
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.isSymbolicLink()) continue
+    try {
+      latest = Math.max(latest, (await stat(join(dir, entry.name))).mtimeMs)
+    } catch {
+      /* vanished meanwhile */
+    }
+  }
+  return latest
+}
+
+/**
+ * Download caches idle for two weeks go to the trash in a single rename, before anything can
+ * install: an install starting right after finds no cache, never half of one.
+ */
+export async function setIdleCachesAside(now = Date.now()): Promise<string[]> {
+  const moved: string[] = []
+  for (const tool of CACHE_TOOLS) {
+    const dir = cacheDir(tool)
+    if (!existsSync(dir)) continue
+    try {
+      if (now - (await lastChange(dir)) < CACHE_IDLE_MS) continue
+      await mkdir(trashDir(), { recursive: true })
+      await rename(dir, join(trashDir(), `${tool}-${now}`))
+      moved.push(tool)
+    } catch {
+      /* held by a scanner or another program: the next start tries again */
+    }
+  }
+  return moved
+}
+
+async function emptyTrash(): Promise<number> {
+  let removed = 0
+  for (const name of existsSync(trashDir()) ? await readdir(trashDir()) : []) {
+    const path = join(trashDir(), name)
+    const bytes = await sizeOf(path)
+    try {
+      await removeTree(path)
+      removed += bytes
+    } catch {
+      /* still held: the next cleanup takes it */
+    }
+  }
+  return removed
+}
+
+/** Room an install needs at least; below it, a start stops instead of filling the disk halfway. */
+export const MIN_FREE_BYTES = 5 * 1024 ** 3
+
+export async function ensureFreeSpace(path: string, needed = MIN_FREE_BYTES): Promise<void> {
+  let free: number
+  try {
+    const disk = await statfs(path)
+    free = disk.bavail * disk.bsize
+  } catch {
+    return // unknown on this system: nothing to go by
+  }
+  if (free >= needed) return
+  const gb = (bytes: number): string => (bytes / 1024 ** 3).toFixed(1)
+  throw new Error(
+    `Only ${gb(free)} GB are free on the disk holding ${path}, and installing needs at least ${gb(needed)} GB. ` +
+      'Free some space: Storage shows what TryMyDev can remove.'
+  )
 }
 
 /** Folders of applications and branches that are no longer registered. */
@@ -186,7 +276,7 @@ export async function usage(): Promise<UsageEntry[]> {
         label: `${store.name} · ${key.slice(0, 8)}`,
         path: join(base, key),
         bytes: await sizeOf(join(base, key)),
-        orphan: !referenced[store.kind].has(key)
+        orphan: referenced.unreadable.length === 0 && !referenced[store.kind].has(key)
       })
     }
   }
@@ -197,6 +287,10 @@ export async function usage(): Promise<UsageEntry[]> {
     if (existsSync(dir)) {
       entries.push({ label: `Download cache · ${tool}`, path: dir, bytes: await sizeOf(dir), orphan: true })
     }
+  }
+
+  if (existsSync(trashDir())) {
+    entries.push({ label: 'Being cleaned up', path: trashDir(), bytes: await sizeOf(trashDir()), orphan: true })
   }
 
   const legacy = legacyPython()
@@ -228,22 +322,27 @@ export async function usage(): Promise<UsageEntry[]> {
 }
 
 /**
- * Removes the environments nothing points at any more, and the folders of removed
- * applications and branches. Runtimes are kept on purpose: they belong to no
- * application and the next one will want them. One prune runs at a time.
+ * Removes the environments nothing points at any more, the folders of removed
+ * applications and branches, and the trash. Runtimes are kept on purpose: they belong to
+ * no application and the next one will want them. One prune runs at a time.
  */
 export function prune(options: PruneOptions = {}): Promise<number> {
   return withLock('prune', async () => {
     let removed = 0
 
-    for (const store of STORES) {
+    const { unreadable } = referencedKeys()
+    if (unreadable.length > 0) {
+      appLog(`[storage] environments kept: the state of ${unreadable.join(', ')} is unreadable`)
+    }
+    for (const store of unreadable.length > 0 ? [] : STORES) {
       const base = join(storeDir(), store.dir)
       if (!existsSync(base)) continue
       for (const key of await readdir(base)) {
         // Decided under the writers' lock, on references read again: a job records
         // its keys before it touches the store.
         await withLock(`${store.lock}:${key}`, async () => {
-          if (referencedKeys()[store.kind].has(key)) return
+          const referenced = referencedKeys()
+          if (referenced.unreadable.length > 0 || referenced[store.kind].has(key)) return
           removed += await sizeOf(join(base, key))
           await removePath(join(base, key))
         })
@@ -276,6 +375,7 @@ export function prune(options: PruneOptions = {}): Promise<number> {
         await removePath(dir)
       }
     }
+    removed += await emptyTrash()
     return removed
   })
 }

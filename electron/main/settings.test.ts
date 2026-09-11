@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { after, before, describe, it } from 'node:test'
 import { writeJson } from './fsx'
 import { settingsPath } from './paths'
-import { githubToken, hasGithubToken, setGithubToken } from './settings'
+import { githubToken, hasGithubToken, preferences, setGithubToken, setPreference } from './settings'
 import { cleanup, useUserData } from './testing'
 
 let data: string
@@ -61,5 +61,21 @@ describe('GitHub token', () => {
   it('counts as absent once it can no longer be decrypted', () => {
     writeJson(settingsPath(), { githubToken: Buffer.from('from another machine').toString('base64') })
     assert.equal(githubToken(), undefined)
+  })
+})
+
+describe('preferences', () => {
+  it('are on until switched off, and kept beside the token', () => {
+    writeJson(settingsPath(), { githubToken: 'sealed' })
+    assert.deepEqual(preferences(), { autoCleanup: true, overlay: true })
+    assert.deepEqual(setPreference('overlay', false), { autoCleanup: true, overlay: false })
+    assert.deepEqual(setPreference('autoCleanup', false), { autoCleanup: false, overlay: false })
+    assert.equal(JSON.parse(readFileSync(settingsPath(), 'utf-8')).githubToken, 'sealed')
+    assert.deepEqual(setPreference('overlay', true), { autoCleanup: false, overlay: true })
+  })
+
+  it('refuses a name or a value it does not know', () => {
+    assert.throws(() => setPreference('githubToken' as never, true), /Unknown setting: githubToken/)
+    assert.throws(() => setPreference('overlay', 'no' as never), /Unknown setting: overlay/)
   })
 })

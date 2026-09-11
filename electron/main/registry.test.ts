@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { join } from 'node:path'
 import { after, before, beforeEach, describe, it } from 'node:test'
 import { writeJson } from './fsx'
-import { branchDir, registryPath } from './paths'
+import { branchDir, registryBackupPath, registryPath } from './paths'
 import * as registry from './registry'
 import { branchKey } from './source-url'
 import { cleanup, useUserData } from './testing'
@@ -40,6 +40,18 @@ describe('registry', () => {
     assert.equal(registry.apps().length, 1)
     assert.equal(again.manifest?.name, 'Newer')
     assert.deepEqual(registry.getApp(first.id).approvals, [{ hash: 'hash-1', source: 'o/r' }])
+  })
+
+  it("remembers the tester's folder for an application, and forgets it on reset", () => {
+    const app = registry.addApp('o/r')
+    registry.setFolder(app.id, 'extensions', 'D:\\Modly\\extensions')
+    registry.setFolder(app.id, 'presets', 'D:\\presets')
+    assert.deepEqual(registry.getApp(app.id).folders, { extensions: 'D:\\Modly\\extensions', presets: 'D:\\presets' })
+
+    registry.setFolder(app.id, 'extensions', undefined)
+    registry.setFolder(app.id, 'presets', undefined)
+    assert.equal(registry.getApp(app.id).folders, undefined)
+    assert.throws(() => registry.setFolder('nope', 'extensions', 'x'), /Unknown application: nope/)
   })
 
   it('fills in the repository of an application registered before it was recorded', () => {
@@ -106,6 +118,30 @@ describe('registry', () => {
     }
     rmSync(registryPath())
     assert.deepEqual(registry.apps(), [], 'no registry yet is an empty one')
+  })
+
+  it('keeps the previous registry before each change, and puts it back in place of an unreadable one', () => {
+    rmSync(registryBackupPath(), { force: true })
+    registry.addApp('o/first')
+    registry.addApp('o/second')
+    const backup = JSON.parse(readFileSync(registryBackupPath(), 'utf-8')) as { apps: { id: string }[] }
+    assert.deepEqual(backup.apps.map((a) => a.id), ['o-first'])
+
+    writeFileSync(registryPath(), '{ torn by a crash')
+    assert.match(registry.problem()?.message ?? '', /unreadable .*TryMyDev offers its previous version/)
+    assert.equal(registry.backupReadable(), true)
+
+    const broken = registry.restoreBackup()
+    assert.equal(readFileSync(broken, 'utf-8'), '{ torn by a crash', 'the unreadable file is kept')
+    assert.deepEqual(registry.apps().map((a) => a.id), ['o-first'])
+    assert.equal(registry.problem(), undefined)
+  })
+
+  it('offers no backup it could not read', () => {
+    writeFileSync(registryBackupPath(), 'nope')
+    assert.equal(registry.backupReadable(), false)
+    rmSync(registryBackupPath())
+    assert.equal(registry.backupReadable(), false)
   })
 
   it('never names an application folder "." or ".."', () => {

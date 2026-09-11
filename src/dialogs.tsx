@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Approval, JobError, UsageEntry } from './env'
+import type { Approval, JobError, Settings, UsageEntry } from './env'
 
 export function Modal({
   title,
@@ -328,10 +328,23 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Elemen
   const [token, setToken] = useState('')
   const [status, setStatus] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [prefs, setPrefs] = useState<Pick<Settings, 'autoCleanup' | 'overlay'> | null>(null)
 
   useEffect(() => {
-    void window.trymydev.getSettings().then((settings) => setSaved(settings.githubToken))
+    void window.trymydev.getSettings().then((settings) => {
+      setSaved(settings.githubToken)
+      setPrefs({ autoCleanup: settings.autoCleanup, overlay: settings.overlay })
+    })
   }, [])
+
+  const toggle = async (name: 'autoCleanup' | 'overlay', value: boolean): Promise<void> => {
+    try {
+      const settings = await window.trymydev.setPreference(name, value)
+      setPrefs({ autoCleanup: settings.autoCleanup, overlay: settings.overlay })
+    } catch (err) {
+      setStatus(clean(err))
+    }
+  }
 
   const apply = async (value: string | null): Promise<void> => {
     setBusy(true)
@@ -387,6 +400,40 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Elemen
         onChange={(e) => setToken(e.target.value)}
       />
       {status && <p className="message">{status}</p>}
+
+      <div className="section">Storage</div>
+      <label className="option">
+        <input
+          type="checkbox"
+          checked={prefs?.autoCleanup ?? true}
+          disabled={!prefs}
+          onChange={(e) => void toggle('autoCleanup', e.target.checked)}
+        />
+        <span>
+          Clean up when TryMyDev starts
+          <small>
+            Removes environments no branch uses any more, what removed branches left behind, and download caches
+            unused for two weeks. Never your branches, models, extensions, workspace or workflows.
+          </small>
+        </span>
+      </label>
+
+      <div className="section">Tested applications</div>
+      <label className="option">
+        <input
+          type="checkbox"
+          checked={prefs?.overlay ?? true}
+          disabled={!prefs}
+          onChange={(e) => void toggle('overlay', e.target.checked)}
+        />
+        <span>
+          Show the tools button on tested applications
+          <small>
+            The button in the corner of their window, with Report bug. Switch it off if an application ever misbehaves
+            with it; it applies the next time a branch starts.
+          </small>
+        </span>
+      </label>
     </Modal>
   )
 }

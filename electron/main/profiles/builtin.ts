@@ -28,19 +28,54 @@ const PROFILES: Record<string, () => Manifest> = {
     // `venv --clear` in the one it was given — Documents\Modly by default, which is where
     // an installed Modly keeps its own environment. A branch never shows that screen:
     // its settings point at its own folders, and the marker says setup is done.
+    // Each folder is TryMyDev's own or the installed Modly's — where its settings say, else where
+    // its first-run screen puts it — and the tester switches between them.
+    folders: [
+      {
+        // The installed Modly's by default: each extension brings a torch environment, 50 GB for
+        // some, so a set per TryMyDev fills the disk. TryMyDev's own is the short folder: an
+        // extension's venv goes 214 characters deep, and Python on Windows stops at 260.
+        id: 'extensions',
+        label: 'Extensions',
+        own: '{short}/ext',
+        installed: { file: '{appData}/Modly/settings.json', key: 'extensionsDir', usual: '{documents}/Modly/extensions' },
+        use: 'installed'
+      },
+      // Generations and workflows are TryMyDev's by default, apart from an installed Modly's: a
+      // branch changing their format must not reach them.
+      {
+        id: 'workspace',
+        label: 'Workspace',
+        own: '{shared}/workspace',
+        installed: { file: '{appData}/Modly/settings.json', key: 'workspaceDir', usual: '{documents}/Modly/workspace' },
+        use: 'own'
+      },
+      {
+        id: 'workflows',
+        label: 'Workflows',
+        own: '{shared}/workflows',
+        installed: { file: '{appData}/Modly/settings.json', key: 'workflowsDir', usual: '{documents}/Modly/workflows' },
+        use: 'own'
+      }
+    ],
     seed: [
       {
         path: 'settings.json',
         json: {
           // Models are only read or downloaded into: an installed Modly's library is reused.
           modelsDir: '{documents}/Modly/models',
-          workspaceDir: '{shared}/workspace',
-          workflowsDir: '{shared}/workflows',
-          // Shared by the branches, in the short folder: an extension's venv goes 200
-          // characters deep, and Python on Windows stops at 260.
-          extensionsDir: '{short}/ext',
           dependenciesDir: '{data}/dependencies'
         }
+      },
+      // At every start, so a folder chosen later reaches branches created before.
+      {
+        path: 'settings.json',
+        json: {
+          extensionsDir: '{folder:extensions}',
+          workspaceDir: '{folder:workspace}',
+          workflowsDir: '{folder:workflows}'
+        },
+        merge: true
       },
       { path: 'dependencies/venv', link: '{venv}' },
       // version is SETUP_VERSION in Modly's electron/main/python-setup.ts.

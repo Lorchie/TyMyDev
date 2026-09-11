@@ -1,7 +1,7 @@
-import { existsSync, readFileSync } from 'fs'
+import { copyFileSync, existsSync, readFileSync, renameSync } from 'fs'
 import { rename } from 'fs/promises'
 import { writeJson } from './fsx'
-import { branchDir, registryPath } from './paths'
+import { branchDir, registryBackupPath, registryPath } from './paths'
 import { branchKey } from './source-url'
 import type { App, Branch, Manifest, Source } from './types'
 
@@ -24,19 +24,54 @@ function read(): RegistryFile {
     throw err
   }
   try {
-    const file = JSON.parse(text) as Partial<RegistryFile>
-    if (!Array.isArray(file.apps) || !Array.isArray(file.branches)) throw new Error('unexpected content')
-    return file as RegistryFile
+    return parse(text)
   } catch (err) {
     throw new Error(
       `${registryPath()} is unreadable (${(err as Error).message}). It was left untouched, and nothing is ` +
-        'deleted meanwhile: restore it from a backup, or remove it to start over.'
+        `deleted meanwhile: ${existsSync(registryBackupPath()) ? 'TryMyDev offers its previous version' : 'remove it to start over'}.`
     )
   }
 }
 
+function parse(text: string): RegistryFile {
+  const file = JSON.parse(text) as Partial<RegistryFile>
+  if (!Array.isArray(file.apps) || !Array.isArray(file.branches)) throw new Error('unexpected content')
+  return file as RegistryFile
+}
+
+/** Before each change, the registry as it was is kept: one step back if anything goes wrong. */
 function write(file: RegistryFile): void {
+  if (existsSync(registryPath())) copyFileSync(registryPath(), registryBackupPath())
   writeJson(registryPath(), file)
+}
+
+/** Why the registry cannot be read, or nothing when it can. */
+export function problem(): Error | undefined {
+  try {
+    read()
+    return undefined
+  } catch (err) {
+    return err as Error
+  }
+}
+
+/** Whether a readable previous version is there to restore. */
+export function backupReadable(): boolean {
+  try {
+    parse(readFileSync(registryBackupPath(), 'utf-8'))
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** The previous version takes the place of an unreadable registry, which is kept beside it. */
+export function restoreBackup(): string {
+  const broken = `${registryPath()}.broken-${Date.now()}`
+  if (existsSync(registryPath())) renameSync(registryPath(), broken)
+  copyFileSync(registryBackupPath(), registryPath())
+  read()
+  return broken
 }
 
 export function apps(): App[] {
@@ -92,6 +127,19 @@ export function addApp(repo: string, manifest?: Manifest): App {
   }
   write({ ...file, apps: [...file.apps, app] })
   return app
+}
+
+/** The tester's folder for `id`, or back to the detected or default one without `path`. */
+export function setFolder(appId: string, id: string, path: string | undefined): void {
+  const file = read()
+  const app = file.apps.find((a) => a.id === appId)
+  if (!app) throw new Error(`Unknown application: ${appId}`)
+  const folders = { ...app.folders }
+  if (path) folders[id] = path
+  else delete folders[id]
+  if (Object.keys(folders).length > 0) app.folders = folders
+  else delete app.folders
+  write(file)
 }
 
 /** `owner/repo` of the code a branch runs — what an approval trusts. */
