@@ -105,7 +105,11 @@ function validAction(value: unknown): value is RawAction {
  * actions from the recorder injected into it. `take` collects the recorder's actions at
  * once — before a report, so the last click is in it.
  */
-export function watchContents(contents: WebContents, journal: Journal): { take: () => Promise<void> } {
+export interface Recording {
+  take: () => Promise<void>
+}
+
+export function watchContents(contents: WebContents, journal: Journal): Recording {
   // Electron changed these events' arguments over its versions; the application brings its own.
   const on = (event: string, listener: (...args: any[]) => void): void => {
     ;(contents as unknown as NodeJS.EventEmitter).on(event, listener)

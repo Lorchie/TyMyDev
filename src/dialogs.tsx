@@ -322,25 +322,33 @@ export function StorageDialog({ onClose }: { onClose: () => void }): JSX.Element
   )
 }
 
+const pick = (settings: Settings): Pick<Settings, 'autoCleanup' | 'overlay' | 'agent' | 'agentError'> => ({
+  autoCleanup: settings.autoCleanup,
+  overlay: settings.overlay,
+  agent: settings.agent,
+  agentError: settings.agentError
+})
+
 /** The GitHub token: checked with GitHub before it is kept, never shown again. */
 export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Element {
   const [saved, setSaved] = useState<boolean | null>(null)
   const [token, setToken] = useState('')
   const [status, setStatus] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [prefs, setPrefs] = useState<Pick<Settings, 'autoCleanup' | 'overlay'> | null>(null)
+  const [agentNote, setAgentNote] = useState<string | null>(null)
+  const [prefs, setPrefs] = useState<Pick<Settings, 'autoCleanup' | 'overlay' | 'agent' | 'agentError'> | null>(null)
 
   useEffect(() => {
     void window.trymydev.getSettings().then((settings) => {
       setSaved(settings.githubToken)
-      setPrefs({ autoCleanup: settings.autoCleanup, overlay: settings.overlay })
+      setPrefs(pick(settings))
     })
   }, [])
 
-  const toggle = async (name: 'autoCleanup' | 'overlay', value: boolean): Promise<void> => {
+  const toggle = async (name: 'autoCleanup' | 'overlay' | 'agent', value: boolean): Promise<void> => {
     try {
       const settings = await window.trymydev.setPreference(name, value)
-      setPrefs({ autoCleanup: settings.autoCleanup, overlay: settings.overlay })
+      setPrefs(pick(settings))
     } catch (err) {
       setStatus(clean(err))
     }
@@ -434,6 +442,54 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Elemen
           </small>
         </span>
       </label>
+
+      <div className="section">Agent access</div>
+      <label className="option">
+        <input
+          type="checkbox"
+          checked={prefs?.agent ?? false}
+          disabled={!prefs}
+          onChange={(e) => void toggle('agent', e.target.checked)}
+        />
+        <span>
+          Let an agent test the applications
+          <small>
+            Claude Code, or another MCP client on this computer, can start branches, click and type in their windows,
+            read their errors and log, and write bug reports. It never approves a manifest. It needs the tools button,
+            and applies to branches started from now on.
+          </small>
+        </span>
+      </label>
+      {prefs?.agent && (
+        <>
+          {prefs.agentError && <p className="message">{prefs.agentError}</p>}
+          <div className="row">
+            <button
+              className="ghost"
+              onClick={() =>
+                void window.trymydev
+                  .copyAgentCommand()
+                  .then(() => setAgentNote('Command copied: run it once in a terminal to add TryMyDev to Claude Code.'))
+                  .catch((err) => setAgentNote(clean(err)))
+              }
+            >
+              Copy the Claude Code command
+            </button>
+            <button
+              className="ghost"
+              onClick={() =>
+                void window.trymydev
+                  .renewAgentToken()
+                  .then(() => setAgentNote('New token: the old one stops working. The new command is copied — run it again.'))
+                  .catch((err) => setAgentNote(clean(err)))
+              }
+            >
+              New token
+            </button>
+          </div>
+          {agentNote && <p className="message">{agentNote}</p>}
+        </>
+      )}
     </Modal>
   )
 }

@@ -185,7 +185,7 @@ describe('overlay in a tested Electron application', () => {
       assert.ok(!md.includes(secret) && !report.logs.includes(secret), `${secret} stays out of the report`)
     }
 
-    const preview = await overlay.evaluate(`window.overlay.report.preview('Export does nothing, see ghp_abcdefghijklmnopqrstuvwxyz0123456789')`)
+    const preview = await overlay.evaluate(`window.overlay.report.preview('Export does nothing, see ' + 'ghp' + '_abcdefghijklmnopqrstuvwxyz0123456789')`)
     assert.match(preview, /## What happened\n\nExport does nothing, see \[redacted\]\n/)
     await overlay.evaluate('window.overlay.report.close()')
   })

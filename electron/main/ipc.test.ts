@@ -127,8 +127,13 @@ describe('IPC', () => {
   })
 
   it('switches a preference, and nothing else', async () => {
-    assert.deepEqual(await call('settings:get', 7), { githubToken: false, autoCleanup: true, overlay: true })
-    assert.deepEqual(await call('settings:setPreference', 7, 'overlay', false), { githubToken: false, autoCleanup: true, overlay: false })
+    assert.deepEqual(await call('settings:get', 7), { githubToken: false, autoCleanup: true, overlay: true, agent: false })
+    assert.deepEqual(await call('settings:setPreference', 7, 'overlay', false), {
+      githubToken: false,
+      autoCleanup: true,
+      overlay: false,
+      agent: false
+    })
     await assert.rejects(call('settings:setPreference', 7, 'githubToken', true), /Unknown setting/)
     await call('settings:setPreference', 7, 'overlay', true)
   })

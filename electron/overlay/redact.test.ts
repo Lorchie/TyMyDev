@@ -6,19 +6,20 @@ const home = process.platform === 'win32' ? 'C:\\Users\\Jérôme' : '/home/jerom
 
 describe('redactText', () => {
   it('masks tokens whose shape is known', () => {
+    // Fake tokens, put together at run time: written whole, secret scanners take them for real ones.
     const samples = [
-      'ghp_abcdefghijklmnopqrstuvwxyz0123456789',
-      'github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz',
-      'glpat-abcdefghijklmnopqrstu',
-      'sk-ant-api03-abcdefghijklmnopqrstuvwxyz',
-      'sk-proj-abcdefghijklmnopqrstuvwxyz012345',
-      'hf_abcdefghijklmnopqrstuvwxyzABCD',
-      'xoxb-1234567890-abcdefghij',
-      'AKIAIOSFODNN7EXAMPLE',
-      'AIzaSyA-abcdefghijklmnopqrstuvwxyz01234',
-      'npm_abcdefghijklmnopqrstuvwxyz0123456789',
-      'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U'
-    ]
+      ['ghp', '_abcdefghijklmnopqrstuvwxyz0123456789'],
+      ['github', '_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz'],
+      ['glpat', '-abcdefghijklmnopqrstu'],
+      ['sk-ant', '-api03-abcdefghijklmnopqrstuvwxyz'],
+      ['sk-proj', '-abcdefghijklmnopqrstuvwxyz012345'],
+      ['hf', '_abcdefghijklmnopqrstuvwxyzABCD'],
+      ['xoxb', '-1234567890-abcdefghij'],
+      ['AKIA', 'IOSFODNN7EXAMPLE'],
+      ['AIza', 'SyA-abcdefghijklmnopqrstuvwxyz01234'],
+      ['npm', '_abcdefghijklmnopqrstuvwxyz0123456789'],
+      ['eyJhbGciOiJIUzI1NiJ9', '.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U']
+    ].map((parts) => parts.join(''))
     for (const token of samples) {
       const out = redactText(`loaded ${token} ok`)
       assert.equal(out, 'loaded [redacted] ok', token)

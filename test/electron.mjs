@@ -36,6 +36,26 @@ class WebContents {
     /** Scripts run in isolated worlds, and what the page answers them. */
     this.scripts = []
     this.isolated = () => undefined
+    this.throttling = true
+    /** The DevTools protocol: every command sent, and what `answer` makes of it. */
+    this.debugger = {
+      attached: false,
+      sent: [],
+      answer: () => ({}),
+      attach: () => {
+        if (this.debugger.attached) throw new Error('Another debugger is already attached')
+        this.debugger.attached = true
+      },
+      isAttached: () => this.debugger.attached,
+      sendCommand: (method, params) => {
+        this.debugger.sent.push({ method, params })
+        try {
+          return Promise.resolve(this.debugger.answer(method, params))
+        } catch (err) {
+          return Promise.reject(err)
+        }
+      }
+    }
     /** Channels scoped to this page, like `webContents.ipc`. */
     this.ipc = {
       handlers: {},
@@ -75,6 +95,10 @@ class WebContents {
     this.focused++
   }
 
+  setBackgroundThrottling(allowed) {
+    this.throttling = allowed
+  }
+
   isLoading() {
     return this.loading
   }
@@ -107,9 +131,13 @@ class WebContents {
 
 export class BrowserWindow {
   static opened = []
+  static nextId = 1
 
   constructor(options) {
+    this.id = BrowserWindow.nextId++
     this.options = options
+    this.title = options?.title ?? ''
+    this.focusedWindow = false
     this.destroyed = false
     this.listeners = {}
     this.webContents = new WebContents()
@@ -127,6 +155,14 @@ export class BrowserWindow {
   }
 
   setMenuBarVisibility() {}
+
+  getTitle() {
+    return this.title
+  }
+
+  isFocused() {
+    return this.focusedWindow
+  }
 
   getContentSize() {
     return this.contentSize

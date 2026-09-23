@@ -3,7 +3,15 @@ import { readFileSync } from 'node:fs'
 import { after, before, describe, it } from 'node:test'
 import { writeJson } from './fsx'
 import { settingsPath } from './paths'
-import { githubToken, hasGithubToken, preferences, setGithubToken, setPreference } from './settings'
+import {
+  agentToken,
+  githubToken,
+  hasGithubToken,
+  preferences,
+  renewAgentToken,
+  setGithubToken,
+  setPreference
+} from './settings'
 import { cleanup, useUserData } from './testing'
 
 let data: string
@@ -64,14 +72,47 @@ describe('GitHub token', () => {
   })
 })
 
+describe('agent access', () => {
+  it('is off until asked for, and gets a sealed token when switched on', () => {
+    writeJson(settingsPath(), {})
+    assert.equal(preferences().agent, false)
+    assert.equal(agentToken(), undefined)
+    setPreference('agent', true)
+    const token = agentToken()
+    assert.match(token ?? '', /^[\w-]{43}$/)
+    assert.doesNotMatch(readFileSync(settingsPath(), 'utf-8'), new RegExp(token!))
+  })
+
+  it('keeps its token across switching off and on, until a new one is asked for', () => {
+    const before = agentToken()
+    setPreference('agent', false)
+    setPreference('agent', true)
+    assert.equal(agentToken(), before)
+    const renewed = renewAgentToken()
+    assert.notEqual(renewed, before)
+    assert.equal(agentToken(), renewed)
+  })
+
+  it('cannot be switched on without secure storage', () => {
+    writeJson(settingsPath(), {})
+    process.env.TRYMYDEV_NO_ENCRYPTION = '1'
+    try {
+      assert.throws(() => setPreference('agent', true), /no secure storage/)
+      assert.equal(preferences().agent, false)
+    } finally {
+      delete process.env.TRYMYDEV_NO_ENCRYPTION
+    }
+  })
+})
+
 describe('preferences', () => {
   it('are on until switched off, and kept beside the token', () => {
     writeJson(settingsPath(), { githubToken: 'sealed' })
-    assert.deepEqual(preferences(), { autoCleanup: true, overlay: true })
-    assert.deepEqual(setPreference('overlay', false), { autoCleanup: true, overlay: false })
-    assert.deepEqual(setPreference('autoCleanup', false), { autoCleanup: false, overlay: false })
+    assert.deepEqual(preferences(), { autoCleanup: true, overlay: true, agent: false })
+    assert.deepEqual(setPreference('overlay', false), { autoCleanup: true, overlay: false, agent: false })
+    assert.deepEqual(setPreference('autoCleanup', false), { autoCleanup: false, overlay: false, agent: false })
     assert.equal(JSON.parse(readFileSync(settingsPath(), 'utf-8')).githubToken, 'sealed')
-    assert.deepEqual(setPreference('overlay', true), { autoCleanup: false, overlay: true })
+    assert.deepEqual(setPreference('overlay', true), { autoCleanup: false, overlay: true, agent: false })
   })
 
   it('refuses a name or a value it does not know', () => {

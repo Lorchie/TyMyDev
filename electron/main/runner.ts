@@ -4,7 +4,10 @@ import { closeSync, existsSync, openSync, readFileSync } from 'fs'
 import { mkdir } from 'fs/promises'
 import { createConnection, createServer } from 'net'
 import { basename, join } from 'path'
+import { AgentTarget, type AgentLinkInfo } from '../overlay/agent'
 import { attachOverlay, type OverlayOptions } from '../overlay/attach'
+import { Journal, watchContents } from '../overlay/journal'
+import { Driver } from './drive'
 import { folderPaths, missingChosen, resolveFolders } from './folders'
 import { startFor } from './manifest'
 import { writeJson } from './fsx'
@@ -20,6 +23,7 @@ import {
   shortDir,
   shortOwnerPath
 } from './paths'
+import { localChannel, pipeChannel } from './link'
 import { label as sourceLabel } from './registry'
 import { preferences } from './settings'
 import {
@@ -43,12 +47,19 @@ interface Running {
   window?: BrowserWindow
   /** Stopped on purpose: a forced kill exits non-zero, and that is no crash. */
   stopped?: boolean
+  /** How an agent drives it, when agent access was on at its start. */
+  driver?: Driver
 }
 
 const running = new Map<string, Running>()
 
 export function isRunning(key: string): boolean {
   return running.has(key)
+}
+
+/** Absent for an application started without agent access, or taken back after a restart. */
+export function driver(key: string): Driver | undefined {
+  return running.get(key)?.driver
 }
 
 export function stop(key: string): void {
@@ -132,11 +143,22 @@ export async function launch(
       }
     : undefined
   if (!overlay) log.line('[launch] tools overlay switched off in Settings')
+  // An agent reaches an application through its overlay: without it, there is nothing to drive.
+  const agent = overlay !== undefined && preferences().agent
 
   if (start.mode === 'electron') {
     const bin = state.electronBinary ?? process.execPath
-    const child = toLogFile(log, (fd) => launchElectron(bin, checkout, data, overlay, ctx, fd))
-    track(branch.key, { child, pid: child.pid ?? 0 }, onExit, log)
+    const link = agent ? pipeChannel() : undefined
+    let child: ChildProcess
+    try {
+      child = toLogFile(log, (fd) => launchElectron(bin, checkout, data, overlay, link?.info, ctx, fd))
+    } catch (err) {
+      link?.channel.close()
+      throw err
+    }
+    const driver = link ? new Driver(link.channel) : undefined
+    if (driver) log.line('[launch] agent access on')
+    track(branch.key, { child, pid: child.pid ?? 0, driver }, onExit, log)
     return { detached: identity(child) }
   }
 
@@ -160,8 +182,8 @@ export async function launch(
     throw err
   }
 
-  const window = openWindow(url, label, branch.key, overlay)
-  track(branch.key, { child, pid: child.pid ?? 0, window }, onExit, log)
+  const { window, driver } = openWindow(url, label, branch.key, overlay, agent)
+  track(branch.key, { child, pid: child.pid ?? 0, window, driver }, onExit, log)
   log.line(`[launch] serving ${url}`)
   return { url }
 }
@@ -191,6 +213,7 @@ function track(
   entry.child.on('error', (err) => log.line(`[launch] ${err.message}`))
   entry.child.on('close', (code) => {
     running.delete(key)
+    entry.driver?.close()
     closeWindow(entry.window)
     log.line(`[launch] stopped (code ${code})`)
     onExit(entry.stopped ? null : code)
@@ -276,6 +299,7 @@ function launchElectron(
   checkout: string,
   data: string,
   overlay: OverlayOptions | undefined,
+  link: AgentLinkInfo | undefined,
   ctx: RunContext,
   output: number
 ): ChildProcess {
@@ -287,7 +311,11 @@ function launchElectron(
   // Detached so closing TryMyDev does not take the application down with it.
   return spawn(bin, args, {
     cwd: checkout,
-    env: { ...buildEnv(ctx), ...(overlay ? { TRYMYDEV_OVERLAY: JSON.stringify(overlay) } : {}) },
+    env: {
+      ...buildEnv(ctx),
+      ...(overlay ? { TRYMYDEV_OVERLAY: JSON.stringify(overlay) } : {}),
+      ...(overlay && link ? { TRYMYDEV_AGENT: JSON.stringify(link) } : {})
+    },
     detached: true,
     stdio: ['ignore', output, output],
     windowsHide: false
@@ -408,7 +436,13 @@ function answers(port: number, host: string): Promise<boolean> {
  * A tested web application gets a sandboxed window of its own, with the cookies and
  * permissions of its branch only, no way to navigate TryMyDev elsewhere, and the overlay.
  */
-function openWindow(url: string, title: string, key: string, overlay?: OverlayOptions): BrowserWindow {
+function openWindow(
+  url: string,
+  title: string,
+  key: string,
+  overlay: OverlayOptions | undefined,
+  agent: boolean
+): { window: BrowserWindow; driver?: Driver } {
   const window = new BrowserWindow({
     width: 1280,
     height: 860,
@@ -421,6 +455,12 @@ function openWindow(url: string, title: string, key: string, overlay?: OverlayOp
   window.setMenuBarVisibility(false)
   confine(window.webContents, url)
   void window.loadURL(url)
-  if (overlay) attachOverlay(window, overlay)
-  return window
+  if (!overlay) return { window }
+  const journal = new Journal()
+  const recording = watchContents(window.webContents, journal)
+  attachOverlay(window, overlay, journal, recording)
+  if (!agent) return { window }
+  const target = new AgentTarget(overlay, journal)
+  target.add(window, recording)
+  return { window, driver: new Driver(localChannel(target)) }
 }

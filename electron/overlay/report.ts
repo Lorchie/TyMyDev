@@ -1,7 +1,7 @@
 import { app, screen, type BrowserWindow } from 'electron'
 import { open } from 'fs/promises'
 import { arch, cpus, release, totalmem, version } from 'os'
-import type { Entry, JournalSnapshot } from './journal'
+import type { Entry, Journal, JournalSnapshot } from './journal'
 import { redactText, type RedactContext } from './redact'
 import { zip, type ZipEntry } from './zip'
 
@@ -110,6 +110,35 @@ export function reportMarkdown(data: ReportData, description: string): string {
     ''
   )
   return out.join('\n')
+}
+
+export interface PreparedReport {
+  data: ReportData
+  screenshot?: Buffer
+  /** The screenshot, small enough for the report form. */
+  preview?: string
+}
+
+/** The window as it is now: its last actions taken first, so the last click is in the report. */
+export async function prepareReport(
+  window: BrowserWindow,
+  label: string,
+  source: ReportSource | undefined,
+  journal: Journal,
+  take: () => Promise<void>
+): Promise<PreparedReport> {
+  await take()
+  const image = await window.webContents.capturePage()
+  const data: ReportData = {
+    label,
+    source,
+    at: Date.now(),
+    environment: await environment(window),
+    journal: journal.snapshot(),
+    log: source?.log ? await readLogTail(source.log, journal.context) : []
+  }
+  if (image.isEmpty()) return { data }
+  return { data, screenshot: image.toPNG(), preview: image.resize({ width: 400 }).toDataURL() }
 }
 
 export function reportArchive(data: ReportData, description: string, screenshot?: Buffer): Buffer {

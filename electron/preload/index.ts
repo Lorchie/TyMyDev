@@ -30,6 +30,8 @@ contextBridge.exposeInMainWorld('trymydev', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setGithubToken: (token: string | null) => ipcRenderer.invoke('settings:setGithubToken', token),
   setPreference: (name: string, value: boolean) => ipcRenderer.invoke('settings:setPreference', name, value),
+  copyAgentCommand: () => ipcRenderer.invoke('settings:copyAgentCommand'),
+  renewAgentToken: () => ipcRenderer.invoke('settings:renewAgentToken'),
   openLogs: (appId: string, key: string) => ipcRenderer.invoke('branches:openLogs', appId, key),
   openAppLog: () => ipcRenderer.invoke('app:openLog'),
   reportError: (message: string) => ipcRenderer.invoke('app:reportError', message),

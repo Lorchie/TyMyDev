@@ -1,6 +1,7 @@
 import { clipboard, dialog, ipcMain, shell, type BrowserWindow } from 'electron'
 import { appendFileSync, mkdirSync } from 'fs'
 import { dirname } from 'path'
+import { agentStatus, claudeCommand, syncAgent } from './agent'
 import { appLog, errorText } from './applog'
 import { manifestOfApp, refusedFolder, resolveFolders, type FolderView } from './folders'
 import { rateLimit, resolveSource } from './github'
@@ -11,7 +12,15 @@ import { readState } from './provision'
 import * as registry from './registry'
 import { isRunning } from './runner'
 import { forgetBranchSession, openExternalSafely, samePlace } from './security'
-import { hasGithubToken, preferences, setGithubToken, setPreference, type Preferences } from './settings'
+import {
+  agentToken,
+  hasGithubToken,
+  preferences,
+  renewAgentToken,
+  setGithubToken,
+  setPreference,
+  type Preferences
+} from './settings'
 import { createShortcut } from './shortcut'
 import { parseInput } from './source-url'
 import { prune, usage } from './storage'
@@ -191,20 +200,34 @@ export function registerIpc(getWindow: () => BrowserWindow | null, home: string)
   // Download caches only go while nothing is installing from them.
   handle('storage:prune', () => prune({ caches: !jobs.installing() }))
 
-  handle('settings:get', () => ({ githubToken: hasGithubToken(), ...preferences() }))
+  const settings = (): Record<string, unknown> => {
+    const { error } = agentStatus()
+    return { githubToken: hasGithubToken(), ...preferences(), ...(error ? { agentError: error } : {}) }
+  }
+  handle('settings:get', () => settings())
   handle('settings:setGithubToken', async (token: string | null) => {
     if (!token?.trim()) {
       setGithubToken(undefined)
-      return { githubToken: false, ...preferences() }
+      return settings()
     }
     const limit = await rateLimit(token.trim())
     setGithubToken(token)
-    return { githubToken: true, limit, ...preferences() }
+    return { ...settings(), limit }
   })
-  handle('settings:setPreference', (name: keyof Preferences, value: boolean) => ({
-    githubToken: hasGithubToken(),
-    ...setPreference(name, value)
-  }))
+  handle('settings:setPreference', async (name: keyof Preferences, value: boolean) => {
+    setPreference(name, value)
+    if (name === 'agent') await syncAgent(value, getWindow)
+    return settings()
+  })
+  // The token goes from here to the clipboard: the window never holds it.
+  handle('settings:copyAgentCommand', () => {
+    const token = agentToken()
+    if (!token) throw new Error('Agent access is off: switch it on first.')
+    clipboard.writeText(claudeCommand(token))
+  })
+  handle('settings:renewAgentToken', () => {
+    clipboard.writeText(claudeCommand(renewAgentToken()))
+  })
 
   // The folder is found from the registry, never built from what the window sends.
   handle('branches:openLogs', (_appId: string, key: string) => {

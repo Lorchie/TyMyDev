@@ -3,9 +3,9 @@ import { readFileSync } from 'fs'
 import { mkdir, writeFile } from 'fs/promises'
 import { homedir } from 'os'
 import { basename, dirname, join } from 'path'
-import { Journal, watchContents } from './journal'
+import { Journal, watchContents, type Recording } from './journal'
 import { redactText } from './redact'
-import { environment, readLogTail, reportArchive, reportFileName, reportMarkdown, type ReportData, type ReportSource } from './report'
+import { prepareReport, reportArchive, reportFileName, reportMarkdown, type PreparedReport, type ReportSource } from './report'
 
 /**
  * The TryMyDev overlay: a small transparent view on top of a tested application's window,
@@ -98,7 +98,12 @@ function bounded(requested: unknown): OverlaySize {
  * under it stops receiving the application's clicks. While the button is dragged it covers
  * the whole window, so the pointer never leaves it.
  */
-export function attachOverlay(window: BrowserWindow, options: OverlayOptions, journal = new Journal()): WebContentsView {
+export function attachOverlay(
+  window: BrowserWindow,
+  options: OverlayOptions,
+  journal = new Journal(),
+  recording: Recording = watchContents(window.webContents, journal)
+): WebContentsView {
   const overlaySession = session.fromPartition(PARTITION)
   overlaySession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
   overlaySession.setPermissionCheckHandler(() => false)
@@ -116,8 +121,6 @@ export function attachOverlay(window: BrowserWindow, options: OverlayOptions, jo
   const contents = view.webContents
   contents.setWindowOpenHandler(() => ({ action: 'deny' }))
   contents.on('will-navigate', (event) => event.preventDefault())
-
-  const recording = watchContents(window.webContents, journal)
 
   let size = COLLAPSED
   let anchor = readAnchor(options.settings)
@@ -167,27 +170,17 @@ export function attachOverlay(window: BrowserWindow, options: OverlayOptions, jo
 
   // A report is prepared once — screenshot and journal as they were when the tester asked —
   // then previewed as they type their description, and saved where they choose.
-  let prepared: { data: ReportData; screenshot?: Buffer } | undefined
+  let prepared: PreparedReport | undefined
   let saved: string | undefined
 
   ipc.handle('overlay:report:start', async () => {
-    await recording.take()
-    const image = await window.webContents.capturePage()
-    const screenshot = image.isEmpty() ? undefined : image.toPNG()
-    const data: ReportData = {
-      label: options.label,
-      source: options.report,
-      at: Date.now(),
-      environment: await environment(window),
-      journal: journal.snapshot(),
-      log: options.report?.log ? await readLogTail(options.report.log, journal.context) : []
-    }
-    prepared = { data, screenshot }
+    const report = await prepareReport(window, options.label, options.report, journal, recording.take)
+    prepared = report
     saved = undefined
     return {
-      markdown: reportMarkdown(data, ''),
-      logs: data.log.join('\n'),
-      screenshot: screenshot ? image.resize({ width: 400 }).toDataURL() : undefined
+      markdown: reportMarkdown(report.data, ''),
+      logs: report.data.log.join('\n'),
+      screenshot: report.preview
     }
   })
 

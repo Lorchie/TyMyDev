@@ -65,6 +65,10 @@ export interface Settings {
   autoCleanup: boolean
   /** The tools overlay on tested applications. */
   overlay: boolean
+  /** An agent may drive the applications TryMyDev starts. */
+  agent: boolean
+  /** Why agent access, switched on, is not listening. */
+  agentError?: string
 }
 
 /** A folder of an application: TryMyDev's own, the installed application's, or one the tester picked. */
@@ -97,7 +101,9 @@ export interface Api {
   prune: () => Promise<number>
   getSettings: () => Promise<Settings>
   setGithubToken: (token: string | null) => Promise<Settings & { limit?: number }>
-  setPreference: (name: 'autoCleanup' | 'overlay', value: boolean) => Promise<Settings>
+  setPreference: (name: 'autoCleanup' | 'overlay' | 'agent', value: boolean) => Promise<Settings>
+  copyAgentCommand: () => Promise<void>
+  renewAgentToken: () => Promise<void>
   openLogs: (appId: string, key: string) => Promise<void>
   openAppLog: () => Promise<string>
   reportError: (message: string) => Promise<void>

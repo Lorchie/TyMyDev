@@ -105,6 +105,28 @@ web address parameters and public IP addresses are masked, in the description to
 catches what it recognises: the preview is there so the tester checks before sending. The
 screenshot is not masked; it can be left out. The button can be switched off in Settings.
 
+## Testing with an agent
+
+With **Agent access** switched on in Settings, an agent on your computer — Claude Code, or any
+MCP client — tests branches as a tester would. Settings copies the one command that adds
+TryMyDev to Claude Code:
+
+```bash
+claude mcp add --transport http trymydev http://127.0.0.1:47821/mcp --header "Authorization: Bearer …"
+```
+
+Then ask it, say, *"test pull request 42 of Modly: open the Extensions page and check that
+installed extensions load"*. It opens the pull request (`open_branch`), reads the window as text
+(`snapshot`) or as an image (`screenshot`), clicks, types, presses keys and scrolls with real
+input events, reads console errors and the branch's log — a backend's errors are only there —
+and writes the same bug report the **Report bug** button does, beside the branch's log.
+
+- It never approves a manifest: a branch nobody approved waits for you in TryMyDev's window.
+- It cannot run script in a page, only act as a person would.
+- The server only answers on this computer, with the token; web pages are refused. **New token**
+  in Settings replaces it — the old one stops working at once.
+- It needs the tools button, and applies to branches started once it is on.
+
 ## Folders of an application
 
 An application's page shows the folders a branch uses, and each can be switched: **Use Modly**
@@ -240,7 +262,7 @@ trymydev --start=owner/project@my-branch
 <TryMyDev userData>/
   registry.json                    applications, branches, approvals and folder switches
   registry.backup.json             the registry before its last change
-  settings.json                    GitHub token, encrypted
+  settings.json                    GitHub and agent tokens, encrypted
   logs/main.log                    TryMyDev's own log
   apps/<app>/branches/<ref-hash>/  checkout, data, logs, state
   apps/<app>/shared/               shared directories of that application

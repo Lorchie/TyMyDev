@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, session, shell } from 'electron'
 import { mkdirSync, statSync } from 'fs'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
+import { syncAgent } from './agent'
 import { appLog, errorText } from './applog'
 import { resolveSource } from './github'
 import { registerIpc } from './ipc'
@@ -184,6 +185,7 @@ if (!app.requestSingleInstanceLock()) {
 
     registerIpc(() => mainWindow, home)
     createWindow()
+    if (preferences().agent) void syncAgent(true, () => mainWindow)
 
     setInterval(() => {
       if (mainWindow) void refresh(mainWindow, registry.branches())

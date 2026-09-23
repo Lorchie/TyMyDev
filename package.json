@@ -1,6 +1,6 @@
 {
   "name": "trymydev",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Run any GitHub branch, fork or pull request of any project — hand it to your testers",
   "main": "./out/main/index.js",
   "author": "TryMyDev",
@@ -11,13 +11,14 @@
     "build": "electron-vite build",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test": "node --test --test-timeout=120000 --experimental-transform-types --disable-warning=ExperimentalWarning --import ./test/register.mjs \"electron/**/*.test.ts\"",
-    "test:e2e": "electron-vite build && node --test test/e2e.test.mjs test/overlay.e2e.test.mjs",
+    "test:e2e": "electron-vite build && node --test test/e2e.test.mjs test/overlay.e2e.test.mjs && node --test --experimental-transform-types --disable-warning=ExperimentalWarning --import ./test/register.mjs test/agent.e2e.test.ts",
     "icons": "electron build/icons.cjs",
     "package": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && electron-builder",
     "package:mac": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && electron-builder --mac --arm64",
     "package:linux": "npm run build && electron-builder --linux"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.1",
     "cross-spawn": "^7.0.6",
     "tar": "^7.5.9"
   },

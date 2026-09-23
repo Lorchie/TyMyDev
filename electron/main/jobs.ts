@@ -26,13 +26,22 @@ export function cancel(key: string): void {
   stop(key)
 }
 
+/** How a start ended, for a caller that is not the window — an agent. */
+export type StartOutcome =
+  | { status: 'running'; url?: string }
+  | { status: 'busy' }
+  | { status: 'approval' }
+  | { status: 'cancelled' }
+  | { status: 'failed'; message: string; logTail: string }
+
 /**
  * Update if needed, then run. Nothing here throws at the caller: a failure
  * reaches the tester as a pop-up carrying the tail of the log, and an
  * unapproved manifest reaches them as the list of commands it wants to run.
  */
-export async function startBranch(win: BrowserWindow, key: string): Promise<void> {
-  if (jobs.has(key) || isRunning(key)) return
+export async function startBranch(win: BrowserWindow, key: string): Promise<StartOutcome> {
+  if (isRunning(key)) return { status: 'running', url: readState(registry.getBranch(key).appId, key).url }
+  if (jobs.has(key)) return { status: 'busy' }
 
   const branch = registry.getBranch(key)
   const app = registry.getApp(branch.appId)
@@ -81,6 +90,7 @@ export async function startBranch(win: BrowserWindow, key: string): Promise<void
     patchState(app.id, key, { url, lastLaunch: new Date().toISOString(), running: detached })
     emit('running', url ? `Running on ${url}` : `${manifest.name} is open`)
     send(win, 'branch:updated', { key })
+    return { status: 'running', url }
   } catch (err) {
     jobs.delete(key)
 
@@ -89,16 +99,18 @@ export async function startBranch(win: BrowserWindow, key: string): Promise<void
       emit('done', 'Waiting for your approval')
       send(win, 'job:approval', { key, approval: err.approval })
       send(win, 'branch:updated', { key })
-      return
+      return { status: 'approval' }
     }
 
     const message = err instanceof Error ? err.message : String(err)
     log.line(`[error] ${message}`)
     // A cancellation kills the running command, which then reports a failure of
     // its own — the tester asked for it, so it is not worth a pop-up.
+    const logTail = log.getTail(30)
     if (controller.signal.aborted) emit('done', 'Cancelled')
-    else fail(win, { key, step, message, logTail: log.getTail(30), logPath: log.path })
+    else fail(win, { key, step, message, logTail, logPath: log.path })
     send(win, 'branch:updated', { key })
+    return controller.signal.aborted ? { status: 'cancelled' } : { status: 'failed', message, logTail: tidyTail(logTail) }
   }
 }
 

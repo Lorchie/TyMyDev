@@ -74,7 +74,7 @@ describe('Journal', () => {
     journal.add('action', `Clicked button#${'x'.repeat(100_000)}`)
     assert.equal(journal.snapshot().timeline[0].text.length, 500)
     // A token across the cut is masked whole, not left half recognisable.
-    journal.add('error', `${'x '.repeat(247)}ghp_abcdefghijklmnopqrstuvwxyz0123456789`)
+    journal.add('error', `${'x '.repeat(247)}${'ghp'}_abcdefghijklmnopqrstuvwxyz0123456789`)
     const cut = journal.snapshot().errors[0].text
     assert.equal(cut.length, 500)
     assert.ok(cut.endsWith(' [redac') && !cut.includes('ghp_'), cut.slice(-20))

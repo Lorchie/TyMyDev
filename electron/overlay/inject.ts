@@ -1,6 +1,7 @@
 import { app, WebContentsView, type BrowserWindow } from 'electron'
+import { AgentTarget, connectAgent, type AgentLinkInfo } from './agent'
 import { attachOverlay, type OverlayOptions } from './attach'
-import { Journal } from './journal'
+import { Journal, watchContents } from './journal'
 
 /**
  * Preloaded into a tested Electron application — `electron -r inject.js <checkout>`, which
@@ -15,7 +16,7 @@ const SMALLEST = { width: 400, height: 300 }
 const log = (message: string): void => console.error(`[trymydev] ${message}`)
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
-function install(options: OverlayOptions): void {
+function install(options: OverlayOptions, link?: AgentLinkInfo): void {
   if (typeof WebContentsView !== 'function') {
     log(`no overlay: Electron ${process.versions.electron} predates WebContentsView (30)`)
     return
@@ -33,6 +34,10 @@ function install(options: OverlayOptions): void {
     }
   })
 
+  // Only when TryMyDev was asked to let an agent drive the application.
+  const agent = link ? new AgentTarget(options, journal) : undefined
+  if (link && agent) connectAgent(link, agent, log)
+
   const attached = new WeakSet<BrowserWindow>()
   const attach = (window: BrowserWindow): void => {
     if (attached.has(window) || window.isDestroyed() || window.getParentWindow()) return
@@ -40,7 +45,9 @@ function install(options: OverlayOptions): void {
     if (width < SMALLEST.width || height < SMALLEST.height) return
     attached.add(window)
     try {
-      attachOverlay(window, options, journal)
+      const recording = watchContents(window.webContents, journal)
+      attachOverlay(window, options, journal, recording)
+      agent?.add(window, recording)
     } catch (err) {
       log(`no overlay on a window: ${messageOf(err)}`)
     }
@@ -52,10 +59,12 @@ function install(options: OverlayOptions): void {
 }
 
 const raw = process.env.TRYMYDEV_OVERLAY
-// The application's own child processes have no use for it.
+const rawLink = process.env.TRYMYDEV_AGENT
+// The application's own child processes have no use for them.
 delete process.env.TRYMYDEV_OVERLAY
+delete process.env.TRYMYDEV_AGENT
 try {
-  if (raw) install(JSON.parse(raw) as OverlayOptions)
+  if (raw) install(JSON.parse(raw) as OverlayOptions, rawLink ? (JSON.parse(rawLink) as AgentLinkInfo) : undefined)
 } catch (err) {
   log(`no overlay: ${messageOf(err)}`)
 }
